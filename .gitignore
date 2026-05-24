@@ -1,0 +1,251 @@
+# =========================================================
+# Python .gitignore (Production + AI/ML + FastAPI + IDEs)
+# =========================================================
+
+# -----------------------------
+# Byte-compiled / optimized
+# -----------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# -----------------------------
+# Distribution / packaging
+# -----------------------------
+.Python
+build/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# -----------------------------
+# Virtual environments
+# -----------------------------
+.env
+.venv
+venv/
+ENV/
+env/
+venv.bak/
+pythonenv*
+
+# -----------------------------
+# Environment variables / secrets
+# -----------------------------
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+secrets/
+credentials/
+.aws/
+
+# -----------------------------
+# Logs
+# -----------------------------
+*.log
+logs/
+log/
+
+# -----------------------------
+# Unit test / coverage
+# -----------------------------
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+.pytest_cache/
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+
+# -----------------------------
+# Type checker / lint caches
+# -----------------------------
+.mypy_cache/
+.pyre/
+.pytype/
+.ruff_cache/
+
+# -----------------------------
+# Jupyter Notebook
+# -----------------------------
+.ipynb_checkpoints
+
+# -----------------------------
+# PyCharm / IntelliJ
+# -----------------------------
+.idea/
+*.iml
+out/
+
+# -----------------------------
+# VS Code
+# -----------------------------
+.vscode/
+
+# -----------------------------
+# macOS
+# -----------------------------
+.DS_Store
+
+# -----------------------------
+# Windows
+# -----------------------------
+Thumbs.db
+Desktop.ini
+
+# -----------------------------
+# Linux
+# -----------------------------
+*~
+
+# -----------------------------
+# Database files
+# -----------------------------
+*.sqlite3
+*.db
+
+# -----------------------------
+# FastAPI / Flask / Django
+# -----------------------------
+instance/
+.webassets-cache
+
+# Django
+db.sqlite3
+media/
+
+# Flask
+instance/
+
+# -----------------------------
+# Celery
+# -----------------------------
+celerybeat-schedule
+celerybeat.pid
+
+# -----------------------------
+# Docker
+# -----------------------------
+docker-compose.override.yml
+
+# -----------------------------
+# Kubernetes
+# -----------------------------
+*.kubeconfig
+
+# -----------------------------
+# Terraform
+# -----------------------------
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+
+# -----------------------------
+# AWS SAM / Serverless
+# -----------------------------
+.aws-sam/
+.serverless/
+
+# -----------------------------
+# AI / ML / Vector DB / Models
+# -----------------------------
+models/
+checkpoints/
+artifacts/
+wandb/
+mlruns/
+tensorboard/
+*.h5
+*.onnx
+*.pt
+*.pth
+*.ckpt
+*.bin
+
+# Embeddings / vector stores
+chroma/
+faiss_index/
+vector_store/
+qdrant_storage/
+
+# -----------------------------
+# Data files
+# -----------------------------
+data/
+datasets/
+*.csv
+*.xlsx
+*.parquet
+
+# Keep sample data only
+!sample_data/
+
+# -----------------------------
+# Temporary files
+# -----------------------------
+tmp/
+temp/
+.cache/
+
+# -----------------------------
+# Generated files
+# -----------------------------
+generated/
+exports/
+reports/
+
+# -----------------------------
+# Node.js (for frontend inside repo)
+# -----------------------------
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# -----------------------------
+# Static build outputs
+# -----------------------------
+.next/
+.nuxt/
+dist-frontend/
+
+# -----------------------------
+# Local runtime configs
+# -----------------------------
+.local/
+config.local.yaml
+config.local.json
+
+# -----------------------------
+# Optional: Ignore uploaded files
+# -----------------------------
+uploads/
+
+# -----------------------------
+# Optional: Ignore royalty files
+# -----------------------------
+royalty_statements/
+kdp_reports/

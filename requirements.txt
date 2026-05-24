@@ -1,0 +1,9 @@
+flask
+openai==0.28.1
+python-dotenv
+pandas
+openpyxl
+huggingface_hub
+requests
+chromadb
+fastembed

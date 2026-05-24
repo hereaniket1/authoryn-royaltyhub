@@ -1,0 +1,790 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Athoryn - Royalty Hub</title>
+
+    <style>
+        * { box-sizing: border-box; }
+
+        body {
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            background: #f3f4f6;
+            margin: 0;
+            height: 100vh;
+            overflow: hidden;
+            color: #111827;
+        }
+
+        .app {
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            background: #f8fafc;
+        }
+
+        .header {
+            height: 54px;
+            padding: 14px 22px;
+            background: #111827;
+            color: white;
+            font-size: 16px;
+            font-weight: 650;
+            letter-spacing: .2px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-shrink: 0;
+        }
+
+        .content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            padding-bottom: 128px;
+        }
+
+        .chat {
+            flex: 1;
+            overflow-y: auto;
+            padding: 22px 18px 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+
+        .message {
+            max-width: min(820px, 88%);
+            padding: 13px 15px;
+            border-radius: 16px;
+            line-height: 1.45;
+            white-space: pre-wrap;
+            animation: fadeUp .25s ease-out;
+            box-shadow: 0 8px 18px rgba(15, 23, 42, .06);
+        }
+
+        .user {
+            align-self: flex-end;
+            background: #2563eb;
+            color: white;
+            border-bottom-right-radius: 5px;
+        }
+
+        .assistant {
+            align-self: flex-start;
+            background: white;
+            color: #111827;
+            border: 1px solid #e5e7eb;
+            border-bottom-left-radius: 5px;
+        }
+
+        .results-shell {
+            width: min(1180px, calc(100vw - 32px));
+            margin: 0 auto 16px;
+            animation: fadeUp .32s ease-out;
+        }
+
+        .result-note {
+            margin-bottom: 10px;
+            padding: 12px 14px;
+            border-radius: 14px;
+            font-size: 14px;
+            border: 1px solid #e5e7eb;
+            background: white;
+            box-shadow: 0 8px 20px rgba(15, 23, 42, .05);
+        }
+
+        .result-warning {
+            border-color: #f59e0b;
+            background: #fffbeb;
+            color: #92400e;
+        }
+
+        .result-success {
+            border-color: #10b981;
+            background: #ecfdf5;
+            color: #065f46;
+        }
+
+        .table-card {
+            border: 1px solid #e5e7eb;
+            border-radius: 18px;
+            background: white;
+            box-shadow: 0 18px 40px rgba(15, 23, 42, .10);
+            overflow: hidden;
+        }
+
+        .table-toolbar {
+            padding: 11px 14px;
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            align-items: center;
+            border-bottom: 1px solid #eef2f7;
+            background: #ffffff;
+        }
+
+        .table-title {
+            font-weight: 700;
+            font-size: 14px;
+        }
+
+        .table-meta {
+            font-size: 12px;
+            color: #6b7280;
+        }
+
+        .data-table-wrapper {
+            max-height: 46vh;
+            overflow: auto;
+        }
+
+        table {
+            width: max-content;
+            min-width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            font-size: 12px;
+        }
+
+        th, td {
+            border-right: 1px solid #e5e7eb;
+            border-bottom: 1px solid #e5e7eb;
+            padding: 8px 10px;
+            text-align: left;
+            white-space: nowrap;
+            vertical-align: top;
+        }
+
+        th {
+            position: sticky;
+            top: 0;
+            z-index: 2;
+            background: #f8fafc;
+            color: #374151;
+            font-weight: 700;
+        }
+
+        tr:hover td { background: #f9fafb; }
+
+        .composer-wrap {
+            position: fixed;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            padding: 16px 16px 22px;
+            background: linear-gradient(to top, #f8fafc 78%, rgba(248,250,252,0));
+        }
+
+        .composer {
+            width: min(900px, calc(100vw - 32px));
+            margin: 0 auto;
+            background: white;
+            border: 1px solid #d1d5db;
+            border-radius: 22px;
+            box-shadow: 0 18px 40px rgba(15, 23, 42, .13);
+            padding: 10px 48px 10px 12px;
+            position: relative;
+            transition: border-color .2s, box-shadow .2s, background .2s;
+        }
+
+        .composer.drag-over {
+            border: 2px dashed #2563eb;
+            background: #eff6ff;
+            box-shadow: 0 18px 42px rgba(37, 99, 235, .18);
+        }
+
+        .file-pill {
+            display: none;
+            align-items: center;
+            gap: 8px;
+            width: fit-content;
+            max-width: 100%;
+            padding: 7px 10px;
+            margin: 0 0 8px 2px;
+            background: #eef2ff;
+            color: #1e3a8a;
+            border: 1px solid #c7d2fe;
+            border-radius: 12px;
+            font-size: 13px;
+            animation: fadeUp .2s ease-out;
+        }
+
+        .file-name {
+            max-width: 680px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .file-remove {
+            border: none;
+            background: transparent;
+            color: #1e3a8a;
+            font-size: 18px;
+            line-height: 1;
+            cursor: pointer;
+            padding: 0 2px;
+        }
+
+        textarea {
+            width: 100%;
+            min-height: 54px;
+            max-height: 150px;
+            border: none;
+            outline: none;
+            resize: none;
+            font-size: 15px;
+            line-height: 1.45;
+            font-family: inherit;
+            background: transparent;
+            color: #111827;
+            padding: 4px 0 2px;
+        }
+
+        .send-button {
+            position: absolute;
+            right: 10px;
+            bottom: 10px;
+            width: 36px;
+            height: 36px;
+            border: none;
+            border-radius: 12px;
+            background: #2563eb;
+            color: white;
+            font-size: 18px;
+            cursor: pointer;
+            display: grid;
+            place-items: center;
+            transition: transform .15s, background .15s;
+        }
+
+        .send-button:hover {
+            background: #1d4ed8;
+            transform: translateY(-1px);
+        }
+
+        .send-button:disabled {
+            opacity: .55;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .hint {
+            width: min(900px, calc(100vw - 32px));
+            margin: 7px auto 0;
+            color: #6b7280;
+            font-size: 12px;
+            text-align: center;
+        }
+
+        @keyframes fadeUp {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        .top-title,
+        h1,
+        .header-title {
+            font-family: 'Cormorant Garamond', serif !important;
+            color: #facc15 !important;
+            background: #000000 !important;
+            letter-spacing: 1px;
+            font-weight: 700 !important;
+            padding: 18px 28px !important;
+            border-radius: 16px !important;
+            display: inline-block !important;
+            box-shadow: 0 8px 30px rgba(250, 204, 21, 0.25);
+        }
+
+        body {
+            background: #0f0f0f !important;
+        }
+    </style>
+
+
+    <style>
+        .royalty-table-shell {
+          width: 100%;
+          max-height: 460px;
+          overflow: auto;
+          margin-top: 14px;
+          border: 1px solid rgba(250, 204, 21, 0.28);
+          border-radius: 18px;
+          background: rgba(10, 10, 10, 0.94);
+          box-shadow: 0 18px 45px rgba(0, 0, 0, 0.35);
+        }
+
+        .royalty-table {
+          width: max-content;
+          min-width: 100%;
+          border-collapse: separate;
+          border-spacing: 0;
+          font-size: 13px;
+        }
+
+        .royalty-table th {
+          position: sticky;
+          top: 0;
+          z-index: 2;
+          background: #111111;
+          color: #facc15;
+          text-align: left;
+          font-weight: 800;
+          padding: 12px 14px;
+          border-bottom: 1px solid rgba(250, 204, 21, 0.32);
+          white-space: nowrap;
+        }
+
+        .royalty-table td {
+          padding: 11px 14px;
+          border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+          color: rgba(255, 255, 255, 0.9);
+          white-space: nowrap;
+        }
+
+        .royalty-table tbody tr:hover td {
+          background: rgba(250, 204, 21, 0.075);
+        }
+    </style>
+
+</head>
+
+
+<body>
+<div class="app">
+    <div class="header">
+        <span>Athoryn - Royalty Hub</span>
+        <span id="metrics" style="font-size:12px;color:#d1d5db;font-weight:400"></span>
+    </div>
+
+    <div class="content">
+        <div id="chat" class="chat"></div>
+    </div>
+
+    <div class="composer-wrap">
+        <div id="composer" class="composer">
+            <div id="filePill" class="file-pill">
+                <span>📄</span>
+                <span id="fileName" class="file-name"></span>
+                <button id="removeFile" class="file-remove" type="button" title="Remove file">×</button>
+            </div>
+            <textarea id="query" placeholder="Ask AI, or drag an Excel file here..."></textarea>
+            <button id="sendButton" class="send-button" type="button" title="Submit">➤</button>
+        </div>
+        <div class="hint">Enter to submit · Shift + Enter for new line · Drag Excel file into the box</div>
+    </div>
+</div>
+
+<script>
+
+    const ROYALTY_TABLE_COLUMNS = [
+      { key: "title", label: "Title" },
+      { key: "author", label: "Author" },
+      { key: "asin_isbn", label: "ASIN / ISBN" },
+      { key: "marketplace", label: "Marketplace" },
+      { key: "country_code", label: "Country" },
+      { key: "units_sold", label: "Units Sold" },
+      { key: "units_refunded", label: "Units Refunded" },
+      { key: "net_units_sold", label: "Net Units Sold / KENP" },
+      { key: "royalty_type", label: "Royalty Type" },
+      { key: "payout_plan", label: "Payout Plan" },
+      { key: "currency", label: "Currency" },
+      { key: "avg_list_price_without_tax", label: "Avg. List Price (No Tax)" },
+      { key: "avg_offer_price_without_tax", label: "Avg. Offer Price (No Tax)" },
+      { key: "avg_file_size_mb", label: "Avg. File Size (MB)" },
+      { key: "avg_delivery_manufacturing_cost", label: "Avg. Delivery / Manufacturing Cost" },
+      { key: "earnings", label: "Earnings" },
+      { key: "base_currency", label: "Base Currency" },
+      { key: "earnings_in_base_currency", label: "Earnings in Base Currency" },
+      { key: "fx_rate", label: "FX Rate" },
+      { key: "created_at", label: "Created At" },
+      { key: "updated_at", label: "Updated At" }
+    ];
+
+    function formatRoyaltyCell(value, key) {
+      if (value === null || value === undefined || value === "") return "—";
+
+      if (key === "created_at" || key === "updated_at") {
+        const date = new Date(value);
+        return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString();
+      }
+
+      const numericFields = new Set([
+        "units_sold",
+        "units_refunded",
+        "net_units_sold",
+        "avg_list_price_without_tax",
+        "avg_offer_price_without_tax",
+        "avg_file_size_mb",
+        "avg_delivery_manufacturing_cost",
+        "earnings",
+        "earnings_in_base_currency",
+        "fx_rate"
+      ]);
+
+      if (numericFields.has(key)) {
+        const num = Number(value);
+        return Number.isNaN(num)
+          ? String(value)
+          : num.toLocaleString(undefined, { maximumFractionDigits: 4 });
+      }
+
+      return String(value);
+    }
+
+
+    function renderRoyaltyRecordsTable(records) {
+      if (!records || !records.length) {
+        return `<div class="empty-state">No records available.</div>`;
+      }
+
+      return `
+        <div class="royalty-table-shell">
+          <table class="royalty-table">
+            <thead>
+              <tr>
+                ${ROYALTY_TABLE_COLUMNS.map(col => `<th>${col.label}</th>`).join("")}
+              </tr>
+            </thead>
+            <tbody>
+              ${records.map(row => `
+                <tr>
+                  ${ROYALTY_TABLE_COLUMNS.map(col => `<td>${formatRoyaltyCell(row[col.key], col.key)}</td>`).join("")}
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      `;
+    }
+
+
+        const chat = document.getElementById("chat")
+        const metrics = document.getElementById("metrics")
+        const queryEl = document.getElementById("query")
+        const composer = document.getElementById("composer")
+        const sendButton = document.getElementById("sendButton")
+        const filePill = document.getElementById("filePill")
+        const fileName = document.getElementById("fileName")
+        const removeFile = document.getElementById("removeFile")
+
+        let draggedFile = null
+        let busy = false
+
+        function keepFocus(){
+            setTimeout(() => queryEl.focus(), 0)
+        }
+
+        window.addEventListener("load", keepFocus)
+        document.addEventListener("click", function(event){
+            if(!event.target.closest("button")) keepFocus()
+        })
+
+        function setBusy(value){
+            busy = value
+            sendButton.disabled = value
+            sendButton.innerText = value ? "…" : "➤"
+        }
+
+        function addMessage(text, type){
+            if(!text) return
+            const div = document.createElement("div")
+            div.className = "message " + type
+            div.innerText = text
+            chat.appendChild(div)
+            chat.scrollTop = chat.scrollHeight
+        }
+
+        function clearResults(){
+            // Keep previous results visible like a chat history.
+            // This function is intentionally left as a no-op.
+        }
+
+        function normalizeValue(value){
+            if(value === null || value === undefined) return ""
+            if(typeof value === "object") return JSON.stringify(value)
+            return String(value)
+        }
+
+        function unwrapUploadPayload(serverResponse){
+            // Expected final JSON shape: { status: "ok", results: { data: {...} } }
+            if(serverResponse && serverResponse.results && serverResponse.results.data){
+                return serverResponse.results.data
+            }
+            if(serverResponse && serverResponse.data){
+                return serverResponse.data
+            }
+            if(serverResponse && serverResponse.results){
+                return serverResponse.results
+            }
+            return serverResponse
+        }
+
+        function getAIContent(data){
+            if(!data) return "No AI response returned."
+            if(data.choices && data.choices[0] && data.choices[0].message){
+                return data.choices[0].message.content || "No AI response returned."
+            }
+            if(data.answer) return data.answer
+            if(data.content) return data.content
+            if(data.message) return data.message
+            if(data.results && typeof data.results === "string") return data.results
+            return JSON.stringify(data, null, 2)
+        }
+
+        function showFile(file){
+            draggedFile = file
+            fileName.innerText = file.name
+            filePill.style.display = "flex"
+            keepFocus()
+        }
+
+        function clearFile(){
+            draggedFile = null
+            fileName.innerText = ""
+            filePill.style.display = "none"
+            keepFocus()
+        }
+
+        removeFile.addEventListener("click", clearFile)
+
+        async function callAIAssistance(query){
+            if(!query.trim()) return null
+
+            addMessage(query, "user")
+
+            const formData = new FormData()
+            formData.append("query", query)
+
+            const start = performance.now()
+            const res = await fetch("/post-query", { method: "POST", body: formData })
+            if(!res.ok) throw new Error("AI assistance route failed")
+
+            const data = await res.json()
+            const latency = ((performance.now() - start) / 1000).toFixed(2)
+            const content = getAIContent(data)
+
+            addMessage(content, "assistant")
+
+            if(data.model || data.usage){
+                metrics.innerText =
+                    "Model: " + (data.model || "N/A") +
+                    " | Tokens: " + ((data.usage && data.usage.total_tokens) || "N/A") +
+                    " | Latency: " + latency + "s"
+            }
+
+            return data
+        }
+
+        async function uploadDraggedFile(file){
+            if(!file) return null
+
+            const formData = new FormData()
+            formData.append("file", file)
+
+            const res = await fetch("/upload", { method: "POST", body: formData })
+            if(!res.ok) throw new Error("File upload failed")
+
+            return await res.json()
+        }
+
+        function createResultsShell(){
+            const shell = document.createElement("div")
+            shell.className = "results-shell"
+            shell.dataset.createdAt = Date.now().toString()
+            chat.appendChild(shell)
+            chat.scrollTop = chat.scrollHeight
+            return shell
+        }
+
+        function appendResultNote(shell, message, type){
+            const note = document.createElement("div")
+            note.className = "result-note " + (type === "success" ? "result-success" : type === "warning" ? "result-warning" : "")
+            note.innerText = message
+            shell.appendChild(note)
+        }
+
+        function renderTable(shell, rows, title){
+            if(!rows || rows.length === 0) return
+
+            const card = document.createElement("div")
+            card.className = "table-card"
+
+            const toolbar = document.createElement("div")
+            toolbar.className = "table-toolbar"
+
+            const titleEl = document.createElement("div")
+            titleEl.className = "table-title"
+            titleEl.innerText = title || "Sample Records"
+
+            const meta = document.createElement("div")
+            meta.className = "table-meta"
+            meta.innerText = rows.length + " rows"
+
+            toolbar.appendChild(titleEl)
+            toolbar.appendChild(meta)
+
+            const wrapper = document.createElement("div")
+            wrapper.className = "data-table-wrapper"
+
+            const preferredColumns = [
+                "id", "report_month", "title", "author", "asin_isbn", "marketplace", "country_code",
+                "units_sold", "units_refunded", "net_units_sold", "royalty_type", "payout_plan",
+                "currency", "avg_list_price_without_tax", "avg_offer_price_without_tax",
+                "avg_file_size_mb", "avg_delivery_manufacturing_cost", "earnings", "ai_mapping_status"
+            ]
+
+            const allColumns = Object.keys(rows[0])
+            const columns = [
+                ...preferredColumns.filter(col => allColumns.includes(col)),
+                ...allColumns.filter(col => !preferredColumns.includes(col) && col !== "raw_row")
+            ]
+
+            const table = document.createElement("table")
+            const thead = document.createElement("thead")
+            const tbody = document.createElement("tbody")
+
+            const headerRow = document.createElement("tr")
+            columns.forEach(col => {
+                const th = document.createElement("th")
+                th.innerText = col
+                headerRow.appendChild(th)
+            })
+            thead.appendChild(headerRow)
+
+            rows.forEach(row => {
+                const tr = document.createElement("tr")
+                columns.forEach(col => {
+                    const td = document.createElement("td")
+                    td.innerText = normalizeValue(row[col])
+                    tr.appendChild(td)
+                })
+                tbody.appendChild(tr)
+            })
+
+            table.appendChild(thead)
+            table.appendChild(tbody)
+            wrapper.appendChild(table)
+            card.appendChild(toolbar)
+            card.appendChild(wrapper)
+            shell.appendChild(card)
+        }
+
+        function renderUploadResult(serverResponse){
+            const data = unwrapUploadPayload(serverResponse)
+            const shell = createResultsShell()
+
+            if(!data){
+                appendResultNote(shell, "No upload response returned from server.", "warning")
+                return
+            }
+
+            if(data.status === "ALREADY_EXISTS"){
+                appendResultNote(
+                    shell,
+                    data.message || `Data already exists for report_month ${data.report_month}. Insert skipped.`,
+                    "warning"
+                )
+                renderTable(shell, data.sample_records || [], `Sample records for ${data.report_month}`)
+                return
+            }
+
+            if(data.status === "INSERTED"){
+                appendResultNote(
+                    shell,
+                    `Data uploaded for ${data.report_month}. Inserted rows: ${data.inserted_rows}.`,
+                    "success"
+                )
+                return
+            }
+
+            if(Array.isArray(data)){
+                renderTable(shell, data, "Records")
+                appendResultNote(shell, "Upload completed.", "success")
+                return
+            }
+
+            if(data.sample_records){
+                renderTable(shell, data.sample_records, `Sample records for ${data.report_month || "selected month"}`)
+            }
+
+            appendResultNote(shell, data.message || "Upload completed.", "success")
+        }
+
+        async function handleSubmit(){
+            if(busy) return
+
+            const query = queryEl.value.trim()
+            const file = draggedFile
+
+            if(!query && !file){
+                addMessage("Please enter a query or drag a file first.", "assistant")
+                keepFocus()
+                return
+            }
+
+            queryEl.value = ""
+            clearFile()
+            // Do not clear old results. Keep them above, like ChatGPT conversation history.
+            setBusy(true)
+
+            try{
+                // If both are present: AI result first, then upload/table/status.
+                if(query){
+                    await callAIAssistance(query)
+                }
+
+                if(file){
+                    addMessage("Uploading file: " + file.name, "user")
+                    const uploadResult = await uploadDraggedFile(file)
+                    renderUploadResult(uploadResult)
+                }
+            }catch(error){
+                const shell = createResultsShell()
+                appendResultNote(shell, error.message || "Request failed", "warning")
+            }finally{
+                setBusy(false)
+                keepFocus()
+            }
+        }
+
+        sendButton.addEventListener("click", handleSubmit)
+
+        queryEl.addEventListener("keydown", function(event){
+            if(event.key === "Enter" && !event.shiftKey){
+                event.preventDefault()
+                handleSubmit()
+            }
+        })
+
+        composer.addEventListener("dragover", function(event){
+            event.preventDefault()
+            composer.classList.add("drag-over")
+        })
+
+        composer.addEventListener("dragleave", function(event){
+            if(!composer.contains(event.relatedTarget)){
+                composer.classList.remove("drag-over")
+            }
+        })
+
+        composer.addEventListener("drop", function(event){
+            event.preventDefault()
+            composer.classList.remove("drag-over")
+
+            if(event.dataTransfer.files && event.dataTransfer.files.length > 0){
+                showFile(event.dataTransfer.files[0])
+            }
+        })
+</script>
+</body>
+</html>
