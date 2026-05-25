@@ -1,6 +1,7 @@
 import requests
-from flask import Flask, g, render_template, request, jsonify
+from flask import Flask, g, render_template, request, jsonify, session, redirect, url_for
 import os
+from functools import wraps
 from fastembed import TextEmbedding
 import re
 import pandas as pd
@@ -8,6 +9,7 @@ from psycopg2.extras import execute_values, Json, RealDictCursor
 model = TextEmbedding()
 
 import psycopg2
+from authlib.integrations.flask_client import OAuth
 
 HUGGINGFACE_AI_TOKEN = os.getenv("HUGGINGFACE_AI_TOKEN")
 HUGGINGFACE_MODEL_URL = os.getenv("HUGGINGFACE_MODEL_URL")
@@ -15,10 +17,25 @@ HUGGINGFACE_API_URL = os.getenv("HUGGINGFACE_API_URL")
 
 app = Flask(__name__)
 
+app.secret_key = os.getenv("FLASK_SECRET_KEY", "change-me-in-production")
+
+oauth = OAuth(app)
+
+google = oauth.register(
+    name="google",
+    client_id=os.getenv("GOOGLE_CLIENT_ID"),
+    client_secret=os.getenv("GOOGLE_CLIENT_SECRET"),
+    server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
+    client_kwargs={
+        "scope": "openid email profile"
+    },
+)
+
+
 try:
     conn = psycopg2.connect(
         host= os.getenv("DB_HOST"),
-        port=os.getenv("DB_POST"),
+        port=os.getenv("DB_PORT") or os.getenv("DB_POST") or 5432,
         database=os.getenv("DB_ROYALTY_DATABASE_NAME"),
         user=os.getenv("DB_USER"),
         password=os.getenv("DB_PASSWORD")
@@ -37,6 +54,114 @@ def huggingface_llm_query(payload):
 
 UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+
+def login_required(view_func):
+    @wraps(view_func)
+    def wrapper(*args, **kwargs):
+        if "user_id" not in session:
+            if request.path.startswith("/api/"):
+                return jsonify({"error": "LOGIN_REQUIRED"}), 401
+            return redirect(url_for("index"))
+        return view_func(*args, **kwargs)
+    return wrapper
+
+
+REPORTING_COLUMNS = [
+    "title",
+    "author",
+    "asin_isbn",
+    "marketplace",
+    "country_code",
+    "units_sold",
+    "units_refunded",
+    "net_units_sold",
+    "royalty_type",
+    "payout_plan",
+    "currency",
+    "avg_list_price_without_tax",
+    "avg_offer_price_without_tax",
+    "avg_file_size_mb",
+    "avg_delivery_manufacturing_cost",
+    "earnings",
+    "base_currency",
+    "earnings_in_base_currency",
+    "fx_rate",
+    "created_at",
+    "updated_at",
+]
+
+REPORTING_FILTER_COLUMNS = [
+    "report_month",
+    "normalized_title",
+    "asin_isbn",
+    "marketplace",
+    "currency",
+    "ingestion_batch_id",
+]
+
+
+def get_reporting_records(conn, filters=None, page=1, page_size=20):
+    filters = filters or {}
+    page = max(int(page or 1), 1)
+    page_size = min(max(int(page_size or 20), 1), 100)
+    offset = (page - 1) * page_size
+
+    where_parts = []
+    params = []
+
+    for column in REPORTING_FILTER_COLUMNS:
+        value = filters.get(column)
+
+        if value is None or str(value).strip() == "":
+            continue
+
+        if column == "normalized_title":
+            where_parts.append("normalized_title ILIKE %s")
+            params.append(f"%{str(value).strip().lower()}%")
+        elif column == "report_month":
+            where_parts.append("report_month = %s")
+            params.append(str(value).strip())
+        else:
+            where_parts.append(f"{column} = %s")
+            params.append(str(value).strip())
+
+    where_sql = ""
+    if where_parts:
+        where_sql = " WHERE " + " AND ".join(where_parts)
+
+    select_columns = ", ".join(REPORTING_COLUMNS)
+
+    count_sql = f"""
+        SELECT COUNT(*) AS total_count
+        FROM royalty_transactions
+        {where_sql}
+    """
+
+    data_sql = f"""
+        SELECT {select_columns}
+        FROM royalty_transactions
+        {where_sql}
+        ORDER BY report_month DESC NULLS LAST, created_at DESC NULLS LAST, title ASC
+        LIMIT %s OFFSET %s
+    """
+
+    with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+        cursor.execute(count_sql, params)
+        total_count = cursor.fetchone()["total_count"]
+
+        cursor.execute(data_sql, params + [page_size, offset])
+        records = cursor.fetchall()
+
+    return {
+        "records": records,
+        "page": page,
+        "page_size": page_size,
+        "total_count": total_count,
+        "total_pages": (total_count + page_size - 1) // page_size if page_size else 0,
+        "filters": filters,
+    }
+
 
 @app.teardown_appcontext
 def close_db(error):
@@ -311,8 +436,164 @@ def insert_total_earnings_excel(conn, excel_file, report_month=None):
         "report_month": final_report_month,
     }
 
+@app.route("/auth/google/login")
+def google_login():
+
+    is_popup = request.args.get("popup") == "true"
+    next_url = request.args.get("next", "/")
+    session["next_url"] = next_url
+    session["oauth_popup"] = is_popup
+
+    # IMPORTANT:
+    # Google requires this URL to match exactly in Google Cloud Console.
+    # Add this exact URI there:
+    # http://localhost:5000/auth/google/callback
+    #
+    # If you run with a different host/port or HTTPS tunnel, set GOOGLE_REDIRECT_URI
+    # to that exact callback URL and add the same value in Google Cloud Console.
+    redirect_uri = os.getenv("GOOGLE_REDIRECT_URI") or url_for("google_callback", _external=True)
+
+    return google.authorize_redirect(redirect_uri)
+
+
+@app.route("/auth/google/callback")
+def google_callback():
+
+    token = google.authorize_access_token()
+
+    user_info = token.get("userinfo")
+
+    if not user_info:
+        user_info = google.userinfo()
+
+    google_sub = user_info.get("sub")
+    email = user_info.get("email")
+    full_name = user_info.get("name")
+    avatar_url = user_info.get("picture")
+    email_verified = user_info.get("email_verified", False)
+
+    with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+
+        cursor.execute(
+            """
+            INSERT INTO app_users (
+                email,
+                full_name,
+                avatar_url,
+                google_sub,
+                email_verified,
+                last_login_at
+            )
+            VALUES (%s, %s, %s, %s, %s, NOW())
+                ON CONFLICT (google_sub)
+            DO UPDATE SET
+                email = EXCLUDED.email,
+                                   full_name = EXCLUDED.full_name,
+                                   avatar_url = EXCLUDED.avatar_url,
+                                   email_verified = EXCLUDED.email_verified,
+                                   last_login_at = NOW(),
+                                   updated_at = NOW()
+                                   RETURNING id, email, full_name, avatar_url
+            """,
+            (
+                email,
+                full_name,
+                avatar_url,
+                google_sub,
+                email_verified
+            )
+        )
+
+        user = cursor.fetchone()
+
+    conn.commit()
+
+    session["user_id"] = str(user["id"])
+    session["user_email"] = user["email"]
+    session["user_name"] = user["full_name"]
+    session["user_avatar"] = user["avatar_url"]
+
+    # Check if this is a popup auth request
+    is_popup = session.pop("oauth_popup", False)
+    if is_popup:
+        return render_template("popup_callback.html")
+
+    next_url = session.pop("next_url", "/")
+
+    return redirect(next_url)
+
+
+@app.route("/auth/me")
+def auth_me():
+
+    if "user_id" not in session:
+        return jsonify({
+            "authenticated": False
+        })
+
+    return jsonify({
+        "authenticated": True,
+        "user": {
+            "id": session.get("user_id"),
+            "email": session.get("user_email"),
+            "name": session.get("user_name"),
+            "picture": session.get("user_avatar")
+        }
+    })
+
+
+@app.route("/auth/logout", methods=["POST"])
+def auth_logout():
+
+    session.clear()
+
+    return jsonify({
+        "status": "ok"
+    })
+
+
+
+
+@app.route("/reporting")
+@login_required
+def reporting_page():
+    return render_template("react_one_pager.html")
+
+
+@app.route("/api/reporting", methods=["GET"])
+@login_required
+def reporting_api():
+    filters = {}
+
+    for column in REPORTING_FILTER_COLUMNS:
+        value = request.args.get(column)
+        if value is not None and str(value).strip() != "":
+            filters[column] = value
+
+    page = request.args.get("page", 1)
+    page_size = request.args.get("page_size", 20)
+
+    data = get_reporting_records(
+        conn=conn,
+        filters=filters,
+        page=page,
+        page_size=page_size
+    )
+
+    return jsonify({
+        "status": "ok",
+        "results": data
+    })
+
+
 @app.route("/upload", methods=["POST"])
 def upload():
+
+    if "user_id" not in session:
+        return jsonify({
+            "error": "LOGIN_REQUIRED"
+        }), 401
+
     if "file" not in request.files:
         return jsonify({"error": "No file uploaded"}), 400
 
