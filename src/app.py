@@ -1,3 +1,5 @@
+import json
+
 import requests
 from flask import Flask, g, render_template, request, jsonify, session, redirect, url_for
 import os
@@ -52,6 +54,41 @@ def huggingface_llm_query(payload):
     response = requests.post(HUGGINGFACE_API_URL, headers=header, json=payload)
     return response.json()
 
+def ___huggingface_llm_query(prompt):
+    headers = {
+        "Authorization": f"Bearer {HUGGINGFACE_AI_TOKEN}",
+        "Content-Type": "application/json"
+    }
+
+    payload = {
+        "inputs": prompt,
+        "parameters": {
+            "max_new_tokens": 160
+        }
+    }
+    # TODO: Hardcoded here
+    HUGGINGFACE_API_URL="https://router.huggingface.co/hf-inference/models/google/flan-t5-large"
+    response = requests.post(
+        HUGGINGFACE_API_URL,
+        headers=headers,
+        json=payload,
+        timeout=60
+    )
+
+    print("HF status:", response.status_code)
+    print("HF body:", response.text)
+
+    response.raise_for_status()
+    data = response.json()
+
+    if isinstance(data, list) and data:
+        return data[0].get("generated_text", "")
+
+    if isinstance(data, dict):
+        return data.get("generated_text", "")
+
+    return str(data)
+
 UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
@@ -100,6 +137,245 @@ REPORTING_FILTER_COLUMNS = [
     "ingestion_batch_id",
 ]
 
+ANALYTICS_METRICS = {
+    "earnings": {
+        "field": "earnings",
+        "agg": "SUM"
+    },
+    "units_sold": {
+        "field": "units_sold",
+        "agg": "SUM"
+    },
+    "refunds": {
+        "field": "units_refunded",
+        "agg": "SUM"
+    }
+}
+
+ANALYTICS_DIMENSIONS = {
+    "title": "title",
+    "author": "author",
+    "country": "country_code",
+    "marketplace": "marketplace",
+    "royalty_type": "royalty_type",
+    "payout_plan": "payout_plan",
+    "currency": "currency",
+    "month": "report_month"
+}
+
+COUNTRY_MAP = {
+    "germany": "DE",
+    "india": "IN",
+    "usa": "US",
+    "united states": "US",
+    "uk": "GB",
+    "united kingdom": "GB",
+    "canada": "CA",
+    "australia": "AU",
+    "france": "FR",
+    "italy": "IT",
+    "spain": "ES",
+    "japan": "JP"
+}
+
+def build_analytics_prompt(user_query):
+    return f"""
+Convert the user question into JSON only.
+
+Allowed metrics:
+earnings, units_sold, refunds
+
+Allowed dimensions:
+title, author, country, marketplace, royalty_type, payout_plan, currency, month
+
+Allowed analysis_type:
+ranking, comparison, trend_decline
+
+Return only valid JSON. No explanation.
+
+Examples:
+
+Question: top earning titles in Germany
+JSON:
+{{"analysis_type":"ranking","metric":"earnings","group_by":["title"],"filters":[{{"dimension":"country","operator":"=","value":"DE"}}],"sort":{{"by":"earnings","direction":"desc"}},"limit":10}}
+
+Question: compare KU vs direct sales
+JSON:
+{{"analysis_type":"comparison","metric":"earnings","group_by":["royalty_type"],"filters":[],"sort":{{"by":"earnings","direction":"desc"}},"limit":20}}
+
+Question: show declining books
+JSON:
+{{"analysis_type":"trend_decline","metric":"earnings","group_by":["title"],"filters":[],"sort":{{"by":"change_percent","direction":"asc"}},"limit":20}}
+
+User question: {user_query}
+JSON:
+"""
+
+ALLOWED_OPERATORS = {"=", "!="}
+
+def parse_llm_json(text):
+    text = text.strip()
+
+    start = text.find("{")
+    end = text.rfind("}")
+
+    if start == -1 or end == -1:
+        raise ValueError("LLM did not return JSON")
+
+    return json.loads(text[start:end + 1])
+
+def validate_analytics_plan(plan):
+    if plan.get("metric") not in ANALYTICS_METRICS:
+        raise ValueError("Invalid metric")
+
+    for dim in plan.get("group_by", []):
+        if dim not in ANALYTICS_DIMENSIONS:
+            raise ValueError(f"Invalid group_by dimension: {dim}")
+
+    for f in plan.get("filters", []):
+        if f.get("dimension") not in ANALYTICS_DIMENSIONS:
+            raise ValueError(f"Invalid filter dimension: {f.get('dimension')}")
+
+        if f.get("operator") not in ALLOWED_OPERATORS:
+            raise ValueError(f"Invalid operator: {f.get('operator')}")
+
+    limit = int(plan.get("limit", 10))
+    plan["limit"] = min(max(limit, 1), 100)
+
+    return plan
+
+def compile_ranking_or_comparison_sql(plan):
+    metric = ANALYTICS_METRICS[plan["metric"]]
+    group_by = plan.get("group_by", [])
+
+    group_fields = [ANALYTICS_DIMENSIONS[d] for d in group_by]
+
+    select_parts = []
+
+    for field in group_fields:
+        select_parts.append(field)
+
+    select_parts.append(
+        f'{metric["agg"]}({metric["field"]}) AS {plan["metric"]}'
+    )
+
+    sql = f"""
+        SELECT {", ".join(select_parts)}
+        FROM royalty_transactions
+    """
+
+    params = []
+    where_parts = []
+
+    for f in plan.get("filters", []):
+        field = ANALYTICS_DIMENSIONS[f["dimension"]]
+        operator = f["operator"]
+        value = f["value"]
+
+        where_parts.append(f"{field} {operator} %s")
+        params.append(value)
+
+    if where_parts:
+        sql += " WHERE " + " AND ".join(where_parts)
+
+    if group_fields:
+        sql += " GROUP BY " + ", ".join(group_fields)
+
+    sort_by = plan.get("sort", {}).get("by", plan["metric"])
+    sort_dir = plan.get("sort", {}).get("direction", "desc").upper()
+
+    if sort_dir not in {"ASC", "DESC"}:
+        sort_dir = "DESC"
+
+    sql += f" ORDER BY {sort_by} {sort_dir}"
+    sql += " LIMIT %s"
+    params.append(plan["limit"])
+
+    return sql, params
+
+def compile_declining_books_sql(plan):
+    metric = ANALYTICS_METRICS[plan["metric"]]
+    limit = plan.get("limit", 20)
+
+    sql = f"""
+        WITH monthly AS (
+            SELECT
+                title,
+                report_month,
+                {metric["agg"]}({metric["field"]}) AS metric_value
+            FROM royalty_transactions
+            GROUP BY title, report_month
+        ),
+        ranked AS (
+            SELECT
+                title,
+                report_month,
+                metric_value,
+                LAG(metric_value) OVER (
+                    PARTITION BY title
+                    ORDER BY report_month
+                ) AS previous_metric_value
+            FROM monthly
+        )
+        SELECT
+            title,
+            previous_metric_value,
+            metric_value AS current_metric_value,
+            metric_value - previous_metric_value AS change_amount,
+            ROUND(
+                ((metric_value - previous_metric_value) / NULLIF(previous_metric_value, 0)) * 100,
+                2
+            ) AS change_percent
+        FROM ranked
+        WHERE previous_metric_value IS NOT NULL
+          AND metric_value < previous_metric_value
+        ORDER BY change_percent ASC
+        LIMIT %s
+    """
+
+    return sql, [limit]
+
+def execute_analytics_query(conn, sql, params):
+    with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+        cursor.execute(sql, params)
+        return cursor.fetchall()
+
+def run_llm_sql_engine(conn, user_query):
+    prompt = build_analytics_prompt(user_query)
+
+    # Call your LLM API here
+    llm_response = huggingface_llm_query({
+        "messages": [
+            {
+                "role": "user",
+                "content": f"{prompt}"
+            }
+        ],
+        "model": "meta-llama/Llama-3.1-8B-Instruct"
+    })
+
+    # llm_text = huggingface_llm_query(prompt)
+    # llm_response = jsonify(llm_response)
+    # plan = parse_llm_json(llm_response)
+    content = llm_response.get("choices", [{}])[0].get("message", {}).get("content", "")
+    # content = jsonify(content)
+    plan = json.loads(content)
+    plan = validate_analytics_plan(plan)
+
+    if plan["analysis_type"] == "trend_decline":
+        sql, params = compile_declining_books_sql(plan)
+    else:
+        sql, params = compile_ranking_or_comparison_sql(plan)
+
+    rows = execute_analytics_query(conn, sql, params)
+
+    return {
+        "type": "analytics",
+        "user_query": user_query,
+        "plan": plan,
+        "sql": sql,
+        "data": rows
+    }
 
 def get_reporting_records(conn, filters=None, page=1, page_size=20):
     filters = filters or {}
@@ -162,7 +438,6 @@ def get_reporting_records(conn, filters=None, page=1, page_size=20):
         "filters": filters,
     }
 
-
 @app.teardown_appcontext
 def close_db(error):
     db = g.pop("db", None)
@@ -188,10 +463,11 @@ def index():
 
     return render_template("react_one_pager.html")
 
-@app.route("/post-query", methods=["POST"])
-def post_query():
+# @app.route("/post-query", methods=["POST"])
+def ______post_query():
 
     input_text = request.form.get("query")
+    prompt = build_analytics_prompt(input_text)
 
     print("User Query:", input_text)
 
@@ -200,7 +476,7 @@ def post_query():
         "messages": [
             {
                 "role": "user",
-                "content": f"{input_text}"
+                "content": f"{prompt}"
             }
         ],
         "model": "meta-llama/Llama-3.1-8B-Instruct"
@@ -208,6 +484,31 @@ def post_query():
 
     print("LLM Response:", llm_response)
     return jsonify(llm_response)
+
+# top earning titles in Germany
+#
+@app.route("/post-query", methods=["POST"])
+def post_query():
+    input_text = request.form.get("query", "").strip()
+
+    if not input_text:
+        return jsonify({"error": "Query is required"}), 400
+
+    try:
+        result = run_llm_sql_engine(conn, input_text)
+
+        return jsonify({
+            "status": "ok",
+            "results": result
+        })
+
+    except Exception as e:
+        print("Analytics error:", e)
+
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
 
 def insert_total_earnings_excel(conn, excel_file, report_month=None):
     column_map = {
