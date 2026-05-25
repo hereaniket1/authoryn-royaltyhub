@@ -668,6 +668,117 @@
       </div>`;
   }
 
+
+  function humanizeDynamicColumn(key){
+    const labels = {
+      title: "Title",
+      author: "Author",
+      asin_isbn: "ASIN / ISBN",
+      marketplace: "Marketplace",
+      country_code: "Country",
+      units_sold: "Units Sold",
+      units_refunded: "Units Refunded",
+      net_units_sold: "Net Units Sold / KENP",
+      royalty_type: "Royalty Type",
+      payout_plan: "Payout Plan",
+      currency: "Currency",
+      avg_list_price_without_tax: "Avg. List Price (No Tax)",
+      avg_offer_price_without_tax: "Avg. Offer Price (No Tax)",
+      avg_file_size_mb: "Avg. File Size (MB)",
+      avg_delivery_manufacturing_cost: "Avg. Delivery / Manufacturing Cost",
+      earnings: "Earnings",
+      base_currency: "Base Currency",
+      earnings_in_base_currency: "Earnings in Base Currency",
+      fx_rate: "FX Rate",
+      created_at: "Created At",
+      updated_at: "Updated At"
+    };
+
+    return labels[key] || String(key)
+      .replace(/_/g, " ")
+      .replace(/\b\w/g, char => char.toUpperCase());
+  }
+
+  function formatDynamicCell(value, key){
+    if(value === null || value === undefined || value === "") return "—";
+
+    if(key === "created_at" || key === "updated_at"){
+      const d = new Date(value);
+      return Number.isNaN(d.getTime()) ? String(value) : d.toLocaleString();
+    }
+
+    const numericKeys = new Set([
+      "units_sold", "units_refunded", "net_units_sold",
+      "avg_list_price_without_tax", "avg_offer_price_without_tax",
+      "avg_file_size_mb", "avg_delivery_manufacturing_cost",
+      "earnings", "earnings_in_base_currency", "fx_rate"
+    ]);
+
+    if(numericKeys.has(key)){
+      const n = Number(value);
+      return Number.isNaN(n) ? String(value) : n.toLocaleString(undefined, { maximumFractionDigits: 4 });
+    }
+
+    return String(value);
+  }
+
+  function renderDynamicResultTable(records, title, meta){
+    if(!records || records.length === 0){
+      return `
+        <div class="table-card">
+          <div class="table-toolbar">
+            <span class="table-title">${title || "Records"}</span>
+            <span class="table-meta">${meta || ""}</span>
+          </div>
+          <div style="padding:16px;color:#6b7280;">No records found.</div>
+        </div>`;
+    }
+
+    const keys = [];
+    records.forEach(row => {
+      Object.keys(row || {}).forEach(key => {
+        if(!keys.includes(key)) keys.push(key);
+      });
+    });
+
+    return `
+      <div class="table-card">
+        <div class="table-toolbar">
+          <span class="table-title">${title || "Records"}</span>
+          <span class="table-meta">${meta || records.length + " records"}</span>
+        </div>
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>${keys.map(key => `<th>${humanizeDynamicColumn(key)}</th>`).join("")}</tr>
+            </thead>
+            <tbody>
+              ${records.map(row => `
+                <tr>${keys.map(key => `<td>${formatDynamicCell(row[key], key)}</td>`).join("")}</tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      </div>`;
+  }
+
+  function appendDynamicResultBlock({message, type, records, title, meta}){
+    const block = document.createElement("div");
+    block.className = "result-block";
+
+    let html = "";
+    if(message){
+      html += `<div class="result-note ${type === "success" ? "result-success" : "result-warning"}">${message}</div>`;
+    }
+    if(records){
+      html += renderDynamicResultTable(records, title, meta);
+    }
+
+    block.innerHTML = html;
+    chatArea.appendChild(block);
+    chatArea.scrollTop = chatArea.scrollHeight;
+  }
+
   function addMessage(text, type){
     const div = document.createElement("div");
     div.className = "message " + type;
@@ -786,7 +897,25 @@
     if(!res.ok) throw new Error("AI assistance route failed");
 
     const data = await res.json();
-    addMessage(getAIContent(data), "assistant");
+
+    const analytics = data && data.status === "ok" &&
+      data.results &&
+      Array.isArray(data.results.data)
+        ? data.results
+        : null;
+
+    if(analytics){
+      appendDynamicResultBlock({
+        message: null,
+        type: "success",
+        records: analytics.data,
+        title: analytics.user_query ? `Results for: ${analytics.user_query}` : "Analytics Results",
+        meta: `${analytics.data.length} records`
+      });
+    } else {
+      addMessage(getAIContent(data), "assistant");
+    }
+
     return data;
   }
 
