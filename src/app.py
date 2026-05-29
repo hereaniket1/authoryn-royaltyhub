@@ -348,34 +348,32 @@ def run_llm_sql_engine(conn, user_query):
         "messages": [
             {
                 "role": "user",
-                "content": f"{prompt}"
+                "content": f"{user_query}"
             }
         ],
         "model": "meta-llama/Llama-3.1-8B-Instruct"
     })
 
-    # llm_text = huggingface_llm_query(prompt)
-    # llm_response = jsonify(llm_response)
-    # plan = parse_llm_json(llm_response)
     content = llm_response.get("choices", [{}])[0].get("message", {}).get("content", "")
     # content = jsonify(content)
-    plan = json.loads(content)
-    plan = validate_analytics_plan(plan)
+    return content
+    # plan = json.loads(content)
+    # plan = validate_analytics_plan(plan)
 
-    if plan["analysis_type"] == "trend_decline":
-        sql, params = compile_declining_books_sql(plan)
-    else:
-        sql, params = compile_ranking_or_comparison_sql(plan)
+    # if plan["analysis_type"] == "trend_decline":
+    #     sql, params = compile_declining_books_sql(plan)
+    # else:
+    #     sql, params = compile_ranking_or_comparison_sql(plan)
 
-    rows = execute_analytics_query(conn, sql, params)
+    # rows = execute_analytics_query(conn, sql, params)
 
-    return {
-        "type": "analytics",
-        "user_query": user_query,
-        "plan": plan,
-        "sql": sql,
-        "data": rows
-    }
+    # return {
+    #     "type": "analytics",
+    #     "user_query": user_query,
+    #     "plan": plan,
+    #     "sql": sql,
+    #     "data": rows
+    # }
 
 def get_reporting_records(conn, filters=None, page=1, page_size=20):
     filters = filters or {}
@@ -462,28 +460,6 @@ def index():
     #     print(row)
 
     return render_template("react_one_pager.html")
-
-# @app.route("/post-query", methods=["POST"])
-def ______post_query():
-
-    input_text = request.form.get("query")
-    prompt = build_analytics_prompt(input_text)
-
-    print("User Query:", input_text)
-
-    # Call your LLM API here
-    llm_response = huggingface_llm_query({
-        "messages": [
-            {
-                "role": "user",
-                "content": f"{prompt}"
-            }
-        ],
-        "model": "meta-llama/Llama-3.1-8B-Instruct"
-    })
-
-    print("LLM Response:", llm_response)
-    return jsonify(llm_response)
 
 # top earning titles in Germany
 #
@@ -851,9 +827,6 @@ def auth_logout():
     return jsonify({
         "status": "ok"
     })
-
-
-
 
 @app.route("/reporting")
 @login_required

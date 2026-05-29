@@ -506,20 +506,12 @@
               <input id="filter_normalized_title" placeholder="example book">
             </div>
             <div class="filter">
-              <label>ASIN / ISBN</label>
-              <input id="filter_asin_isbn" placeholder="B0...">
-            </div>
-            <div class="filter">
               <label>Marketplace</label>
               <input id="filter_marketplace" placeholder="Amazon.com">
             </div>
             <div class="filter">
               <label>Currency</label>
               <input id="filter_currency" placeholder="USD">
-            </div>
-            <div class="filter">
-              <label>Batch ID</label>
-              <input id="filter_ingestion_batch_id" placeholder="UUID">
             </div>
             <div class="filter-actions">
               <button class="primary-btn" id="applyFiltersBtn">Apply</button>
@@ -569,13 +561,48 @@
     { key: "updated_at", label: "Updated At" }
   ];
 
+  const REPORTING_TABLE_COLUMNS = [
+    { key: "title", label: "Title" },
+    { key: "author", label: "Author" },
+    { key: "marketplace", label: "Marketplace" },
+    { key: "country_code", label: "Country" },
+    { key: "units_sold", label: "Units Sold" },
+    { key: "units_refunded", label: "Units Refunded" },
+    { key: "royalty_type", label: "Royalty Type" },
+    { key: "payout_plan", label: "Payout Plan" },
+    { key: "net_units_sold", label: "Net Units Sold / KENP" },
+    { key: "currency", label: "Currency" },
+    { key: "base_currency", label: "Base Currency" },
+    { key: "earnings", label: "Earnings" },
+    { key: "earnings_in_base_currency", label: "Earnings in Base Currency" },
+    { key: "avg_list_price_without_tax", label: "Avg. List Price (No Tax)" },
+    { key: "avg_offer_price_without_tax", label: "Avg. Offer Price (No Tax)" },
+    { key: "avg_file_size_mb", label: "Avg. File Size (MB)" },
+    { key: "avg_delivery_manufacturing_cost", label: "Avg. Delivery / Manufacturing Cost" }
+  ];
+
+
+
   const reportingFilters = [
     "report_month",
     "normalized_title",
-    "asin_isbn",
+    "title",
+    "author",
     "marketplace",
+    "country_code",
+    "units_sold",
+    "units_refunded",
+    "royalty_type",
+    "payout_plan",
+    "net_units_sold",
     "currency",
-    "ingestion_batch_id"
+    "base_currency",
+    "earnings",
+    "earnings_in_base_currency",
+    "avg_list_price_without_tax",
+    "avg_offer_price_without_tax",
+    "avg_file_size_mb",
+    "avg_delivery_manufacturing_cost"
   ];
 
   const landingPage = document.getElementById("landingPage");
@@ -595,6 +622,8 @@
   let currentUser = null;
   let reportingPageNo = 1;
   let reportingTotalPages = 1;
+  let reportingSortColumn = "";
+  let reportingSortDirection = "asc";
 
   function isReportingRoute(){
     return window.location.pathname === "/reporting";
@@ -1029,12 +1058,78 @@
 
   removeFileBtn.addEventListener("click", () => showFile(null));
 
+
+  function renderReportingTable(records, title, meta){
+    if(!records || records.length === 0){
+      return `
+        <div class="table-card">
+          <div class="table-toolbar">
+            <span class="table-title">${title || "Records"}</span>
+            <span class="table-meta">${meta || ""}</span>
+          </div>
+          <div style="padding:16px;color:#6b7280;">No records found.</div>
+        </div>`;
+    }
+
+    return `
+      <div class="table-card">
+        <div class="table-toolbar">
+          <span class="table-title">${title || "Records"}</span>
+          <span class="table-meta">${meta || records.length + " records"}</span>
+        </div>
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                ${REPORTING_TABLE_COLUMNS.map(c => {
+                  const active = reportingSortColumn === c.key;
+                  const icon = active ? (reportingSortDirection === "asc" ? " ↑" : " ↓") : " ↕";
+                  return `<th data-sort-key="${c.key}" style="cursor:pointer;user-select:none;">${c.label}${icon}</th>`;
+                }).join("")}
+              </tr>
+            </thead>
+            <tbody>
+              ${records.map(row => `
+                <tr>${REPORTING_TABLE_COLUMNS.map(c => `<td>${formatCell(row[c.key], c.key)}</td>`).join("")}</tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      </div>`;
+  }
+
+  function attachReportingSortEvents(){
+    document.querySelectorAll("#reportingTable th[data-sort-key]").forEach(th => {
+      th.addEventListener("click", () => {
+        const key = th.getAttribute("data-sort-key");
+
+        if(reportingSortColumn === key){
+          reportingSortDirection = reportingSortDirection === "asc" ? "desc" : "asc";
+        } else {
+          reportingSortColumn = key;
+          reportingSortDirection = "asc";
+        }
+
+        loadReportingData(1);
+      });
+    });
+  }
+
+  function escapeHtml(value){
+    return String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
+
   async function loadReportingData(page){
     reportingPageNo = page || 1;
 
     const params = new URLSearchParams();
     params.set("page", reportingPageNo);
-    params.set("page_size", 20);
+    params.set("page_size", 50);
 
     reportingFilters.forEach(key => {
       const el = document.getElementById("filter_" + key);
@@ -1042,6 +1137,11 @@
         params.set(key, el.value.trim());
       }
     });
+
+    if(reportingSortColumn){
+      params.set("sort_by", reportingSortColumn);
+      params.set("sort_dir", reportingSortDirection);
+    }
 
     const status = document.getElementById("reportingStatus");
     const target = document.getElementById("reportingTable");
@@ -1076,11 +1176,13 @@
     reportingTotalPages = data.total_pages || 1;
 
     summary.innerText = `Page ${reportingPageNo} of ${reportingTotalPages} • ${data.total_count || 0} records`;
-    target.innerHTML = renderTable(
+    target.innerHTML = renderReportingTable(
       data.records || [],
       "Royalty Transactions",
       `Showing ${(data.records || []).length} of ${data.total_count || 0}`
     );
+
+    attachReportingSortEvents();
 
     document.getElementById("prevPageBtn").disabled = reportingPageNo <= 1;
     document.getElementById("nextPageBtn").disabled = reportingPageNo >= reportingTotalPages;
@@ -1093,6 +1195,8 @@
       const el = document.getElementById("filter_" + key);
       if(el) el.value = "";
     });
+    reportingSortColumn = "";
+    reportingSortDirection = "asc";
     loadReportingData(1);
   });
 
