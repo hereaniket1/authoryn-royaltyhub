@@ -43,7 +43,7 @@ try:
         password=os.getenv("DB_PASSWORD")
     )
 except Exception as error:
-    print("DB Connected wrong!")
+    print("DB Connected wrong!", error)
 
 
 
