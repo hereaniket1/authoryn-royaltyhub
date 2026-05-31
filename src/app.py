@@ -105,6 +105,10 @@ def login_required(view_func):
 
 
 REPORTING_COLUMNS = [
+    "source_platform",
+    "product_id",
+    "provider_product_id",
+    "royalty_earner",
     "title",
     "author",
     "asin_isbn",
@@ -115,7 +119,14 @@ REPORTING_COLUMNS = [
     "net_units_sold",
     "royalty_type",
     "payout_plan",
+    "transaction_type",
+    "purchase_type",
+    "offer",
+    "royalty_rule",
     "currency",
+    "royalty_rate",
+    "payee_split",
+    "net_sales",
     "avg_list_price_without_tax",
     "avg_offer_price_without_tax",
     "avg_file_size_mb",
@@ -130,9 +141,14 @@ REPORTING_COLUMNS = [
 
 REPORTING_FILTER_COLUMNS = [
     "report_month",
+    "source_platform",
     "normalized_title",
     "asin_isbn",
+    "product_id",
+    "provider_product_id",
     "marketplace",
+    "transaction_type",
+    "purchase_type",
     "currency",
     "ingestion_batch_id",
 ]
@@ -177,6 +193,9 @@ COUNTRY_MAP = {
     "spain": "ES",
     "japan": "JP"
 }
+
+ACX_COVER_SHEET = "Cover Sheet (ACX)"
+ACX_NET_SALES_SHEET = "Sales Detail (Net Sales)"
 
 def build_analytics_prompt(user_query):
     return f"""
@@ -485,6 +504,357 @@ def post_query():
             "status": "error",
             "message": str(e)
         }), 500
+
+def clean_text(value):
+    if pd.isna(value):
+        return None
+
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+
+    text = str(value).strip()
+    return text or None
+
+def clean_number(value):
+    if pd.isna(value) or value == "":
+        return None
+
+    if isinstance(value, str):
+        value = (
+            value.replace(",", "")
+            .replace("$", "")
+            .replace("₹", "")
+            .replace("€", "")
+            .replace("£", "")
+            .strip()
+        )
+
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+def normalize_title(title):
+    text = clean_text(title)
+    return text.lower() if text else None
+
+def infer_country_code(marketplace):
+    text = clean_text(marketplace)
+    if not text:
+        return None
+
+    normalized = text.lower()
+
+    mapping = {
+        "amazon.com": "US",
+        "amazon.in": "IN",
+        "amazon.co.uk": "GB",
+        "amazon.ca": "CA",
+        "amazon.com.au": "AU",
+        "amazon.de": "DE",
+        "amazon.fr": "FR",
+        "amazon.it": "IT",
+        "amazon.es": "ES",
+        "amazon.co.jp": "JP",
+        "uk": "GB",
+    }
+
+    if normalized in mapping:
+        return mapping[normalized]
+
+    if re.fullmatch(r"[A-Za-z]{2}", text):
+        return text.upper()
+
+    return None
+
+def dataframe_raw_row(row):
+    raw_row = {}
+
+    for key, value in row.items():
+        if pd.isna(value):
+            raw_row[key] = None
+        elif hasattr(value, "item"):
+            raw_row[key] = value.item()
+        else:
+            raw_row[key] = value
+
+    return raw_row
+
+def get_excel_sheet_names(excel_file):
+    workbook = pd.ExcelFile(excel_file, engine="openpyxl")
+    try:
+        return set(workbook.sheet_names)
+    finally:
+        workbook.close()
+
+def parse_acx_period(period_value):
+    text = clean_text(period_value)
+    if not text:
+        return None
+
+    month_map = {
+        "JAN": "01",
+        "FEB": "02",
+        "MAR": "03",
+        "APR": "04",
+        "MAY": "05",
+        "JUN": "06",
+        "JUL": "07",
+        "AUG": "08",
+        "SEP": "09",
+        "SEPT": "09",
+        "OCT": "10",
+        "NOV": "11",
+        "DEC": "12",
+    }
+
+    match = re.search(
+        r"(?P<year>\d{4})[\s_\-]+(?P<month>JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|SEPT|OCT|NOV|DEC)",
+        text,
+        re.IGNORECASE
+    )
+
+    if match:
+        month = month_map[match.group("month").upper()]
+        return f"{match.group('year')}-{month}-01"
+
+    parsed_date = pd.to_datetime(text, errors="coerce")
+    if pd.notna(parsed_date):
+        return parsed_date.strftime("%Y-%m-01")
+
+    return None
+
+def extract_acx_report_month(excel_file):
+    cover = pd.read_excel(
+        excel_file,
+        sheet_name=ACX_COVER_SHEET,
+        header=None,
+        engine="openpyxl"
+    )
+
+    for _, row in cover.iterrows():
+        values = row.tolist()
+
+        for index, value in enumerate(values):
+            text = clean_text(value)
+            if not text:
+                continue
+
+            if "period:" in text.lower():
+                inline_period = text.split(":", 1)[1].strip()
+                parsed_inline = parse_acx_period(inline_period)
+                if parsed_inline:
+                    return parsed_inline
+
+                for candidate in values[index + 1:]:
+                    parsed_candidate = parse_acx_period(candidate)
+                    if parsed_candidate:
+                        return parsed_candidate
+
+    return None
+
+def insert_acx_net_sales_excel(conn, excel_file, report_month=None):
+    column_map = {
+        "Royalty Earner": "royalty_earner",
+        "Product ID": "product_id",
+        "Author": "author",
+        "Title": "title",
+        "Digital ISBN": "asin_isbn",
+        "Provider Product ID": "provider_product_id",
+        "Transaction Type": "transaction_type",
+        "Marketplace": "marketplace",
+        "Purchase Type": "purchase_type",
+        "Offer": "offer",
+        "Royalty Rule": "royalty_rule",
+        "Additional Rule Details": "additional_rule_details",
+        "Currency": "currency",
+        "Royalty Rate": "royalty_rate",
+        "Payee Split": "payee_split",
+        "Net Units": "net_units_sold",
+        "Net Sales": "net_sales",
+        "Net Royalties Earned": "earnings",
+    }
+
+    extracted_report_month = extract_acx_report_month(excel_file)
+
+    if extracted_report_month:
+        final_report_month = extracted_report_month
+    elif report_month:
+        final_report_month = report_month
+    else:
+        raise ValueError(
+            "Report month not found in 'Cover Sheet (ACX)'. "
+            "Expected a Period value like '2025_OCT'."
+        )
+
+    with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+        cursor.execute(
+            """
+            SELECT COUNT(*) AS record_count
+            FROM royalty_transactions
+            WHERE report_month = %s
+              AND source_platform = %s
+            """,
+            (final_report_month, "ACX")
+        )
+
+        existing_count = cursor.fetchone()["record_count"]
+
+        if existing_count > 0:
+            cursor.execute(
+                """
+                SELECT *
+                FROM royalty_transactions
+                WHERE report_month = %s
+                  AND source_platform = %s
+                ORDER BY id
+                LIMIT 20
+                """,
+                (final_report_month, "ACX")
+            )
+
+            existing_records = cursor.fetchall()
+
+            return {
+                "status": "ALREADY_EXISTS",
+                "source_platform": "ACX",
+                "message": f"ACX data already exists for report_month {final_report_month}. Insert skipped.",
+                "report_month": final_report_month,
+                "existing_record_count": existing_count,
+                "sample_records": existing_records,
+            }
+
+    df = pd.read_excel(
+        excel_file,
+        sheet_name=ACX_NET_SALES_SHEET,
+        engine="openpyxl"
+    )
+
+    missing_columns = [column for column in column_map if column not in df.columns]
+    if missing_columns:
+        raise ValueError(
+            f"Missing expected ACX columns in '{ACX_NET_SALES_SHEET}': "
+            + ", ".join(missing_columns)
+        )
+
+    df = df[list(column_map.keys())]
+    df = df.rename(columns=column_map)
+
+    rows = []
+
+    for _, row in df.iterrows():
+        title = clean_text(row.get("title"))
+
+        if not title:
+            continue
+
+        net_units = clean_number(row.get("net_units_sold")) or 0
+        transaction_type = clean_text(row.get("transaction_type"))
+        units_sold = int(net_units) if net_units > 0 else 0
+        units_refunded = abs(int(net_units)) if net_units < 0 or str(transaction_type).lower() == "return" else 0
+        currency = clean_text(row.get("currency"))
+        earnings = clean_number(row.get("earnings"))
+
+        rows.append((
+            "ACX",
+            final_report_month,
+            title,
+            normalize_title(title),
+            clean_text(row.get("author")),
+            clean_text(row.get("asin_isbn")),
+            clean_text(row.get("marketplace")),
+            infer_country_code(row.get("marketplace")),
+            units_sold,
+            units_refunded,
+            net_units,
+            transaction_type,
+            clean_text(row.get("purchase_type")),
+            currency,
+            earnings,
+            currency,
+            earnings,
+            1.0000 if currency else None,
+            Json(dataframe_raw_row(row)),
+            1.0000,
+            "MAPPED",
+            clean_text(row.get("product_id")),
+            clean_text(row.get("provider_product_id")),
+            clean_text(row.get("royalty_earner")),
+            transaction_type,
+            clean_text(row.get("purchase_type")),
+            clean_text(row.get("offer")),
+            clean_text(row.get("royalty_rule")),
+            clean_number(row.get("royalty_rate")),
+            clean_number(row.get("payee_split")),
+            clean_number(row.get("net_sales")),
+            clean_text(row.get("additional_rule_details")),
+        ))
+
+    if not rows:
+        raise ValueError(f"No valid rows found in '{ACX_NET_SALES_SHEET}' tab.")
+
+    insert_sql = """
+                 INSERT INTO royalty_transactions (
+                     source_platform,
+                     report_month,
+                     title,
+                     normalized_title,
+                     author,
+                     asin_isbn,
+                     marketplace,
+                     country_code,
+                     units_sold,
+                     units_refunded,
+                     net_units_sold,
+                     royalty_type,
+                     payout_plan,
+                     currency,
+                     earnings,
+                     base_currency,
+                     earnings_in_base_currency,
+                     fx_rate,
+                     raw_row,
+                     ai_confidence_score,
+                     ai_mapping_status,
+                     product_id,
+                     provider_product_id,
+                     royalty_earner,
+                     transaction_type,
+                     purchase_type,
+                     offer,
+                     royalty_rule,
+                     royalty_rate,
+                     payee_split,
+                     net_sales,
+                     ai_notes
+                 ) VALUES %s
+                 """
+
+    with conn.cursor() as cursor:
+        execute_values(cursor, insert_sql, rows)
+
+    conn.commit()
+
+    return {
+        "status": "INSERTED",
+        "source_platform": "ACX",
+        "inserted_rows": len(rows),
+        "report_month": final_report_month,
+    }
+
+def insert_royalty_excel(conn, excel_file):
+    sheet_names = get_excel_sheet_names(excel_file)
+
+    if ACX_COVER_SHEET in sheet_names and ACX_NET_SALES_SHEET in sheet_names:
+        return insert_acx_net_sales_excel(conn=conn, excel_file=excel_file)
+
+    if "Total Earnings" in sheet_names:
+        return insert_total_earnings_excel(conn=conn, excel_file=excel_file)
+
+    raise ValueError(
+        "Unsupported royalty workbook. Expected KDP 'Total Earnings' or "
+        f"ACX '{ACX_NET_SALES_SHEET}' with '{ACX_COVER_SHEET}'."
+    )
 
 def insert_total_earnings_excel(conn, excel_file, report_month=None):
     column_map = {
@@ -879,9 +1249,7 @@ def upload():
     save_path = os.path.join(UPLOAD_FOLDER, file.filename)
     file.save(save_path)
 
-    name = file.filename.lower()
-
-    data = insert_total_earnings_excel(conn=conn, excel_file=file)
+    data = insert_royalty_excel(conn=conn, excel_file=save_path)
 
     # ingest
     # ingest_excel_to_vector_db("uploads/KDP Royalty statement.xlsx")
