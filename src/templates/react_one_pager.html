@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Athoryn - Royalty Hub</title>
+  <title>The Royalty Hub</title>
 
   <link rel="stylesheet" href="{{ url_for('static', filename='css/react_one_pager.css') }}">
 </head>
@@ -11,9 +11,10 @@
 <body>
 <div class="app">
   <div class="topbar">
-    <a class="brand" href="/">Athoryn - Royalty Hub</a>
+    <a class="brand" href="/">The Royalty Hub</a>
     <div class="nav">
-      <a href="/reporting" id="reportingLink">Reporting</a>
+      <button id="deleteAllDataBtn" class="hidden">Delete All My Data</button>
+      <a href="/reporting" id="reportingLink" class="hidden">Reporting</a>
       <span id="userChip" class="user-chip"></span>
       <button id="loginBtn">Login</button>
       <button id="logoutBtn" class="hidden">Logout</button>
@@ -22,19 +23,26 @@
 
   <main class="main">
     <section id="landingPage" class="page">
-      <div id="chatArea" class="chat-area"></div>
+      <div id="authGate" class="auth-gate hidden">
+        <button id="gateLoginBtn" class="google-login-btn" type="button" aria-label="Login with Google">G</button>
+        <div class="auth-gate-message">Please login with Google before starting anything.</div>
+      </div>
 
-      <div class="composer-wrap">
+      <div id="chatArea" class="chat-area hidden"></div>
+
+      <div id="composerWrap" class="composer-wrap hidden">
         <div id="composer" class="composer">
           <div id="filePill" class="file-pill">
             <span>📄</span>
             <span id="fileName" class="file-name"></span>
             <button id="removeFileBtn" class="file-remove" type="button">×</button>
           </div>
+          <input id="fileInput" class="hidden" type="file" accept=".xlsx">
+          <button id="attachFileBtn" class="attach-btn" type="button">+</button>
           <textarea id="query" placeholder="Ask AI, or drag an Excel file here. Press Enter to submit. Shift+Enter for new line."></textarea>
           <button id="sendBtn" class="send-btn" type="button">↑</button>
         </div>
-        <div class="hint">Drop KDP royalty Excel files here, ask a question, or do both together.</div>
+        <div class="hint">Drop KDP or ACX royalty Excel files here, ask a question, or do both together.</div>
       </div>
     </section>
 
@@ -46,11 +54,25 @@
           <div class="filters">
             <div class="filter">
               <label>Report Month</label>
-              <input id="filter_report_month" type="date">
+              <select id="filter_report_month">
+                <option value="">All available months</option>
+              </select>
+            </div>
+            <div class="filter">
+              <label>Royalty Source</label>
+              <select id="filter_source_platform">
+                <option value="">All sources</option>
+                <option value="ACX">ACX</option>
+                <option value="KDP">KDP</option>
+              </select>
             </div>
             <div class="filter">
               <label>Title Contains</label>
               <input id="filter_normalized_title" placeholder="example book">
+            </div>
+            <div class="filter">
+              <label>Country</label>
+              <input id="filter_country_code" placeholder="US">
             </div>
             <div class="filter">
               <label>Marketplace</label>
@@ -81,6 +103,20 @@
       </div>
     </section>
   </main>
+
+  <div id="recordOverlay" class="record-overlay hidden" role="dialog" aria-modal="true">
+    <div class="record-modal">
+      <div class="record-modal-header">
+        <div id="recordOverlayTitle" class="record-modal-title">Royalty Record</div>
+        <button id="closeRecordOverlayBtn" class="record-close-btn" type="button">×</button>
+      </div>
+      <div id="recordOverlayContent" class="record-modal-content"></div>
+      <div class="record-modal-actions">
+        <button id="deleteRecordBtn" class="danger-btn" type="button">Delete</button>
+        <button id="cancelRecordBtn" class="secondary-btn" type="button">Close</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script src="{{ url_for('static', filename='js/react_one_pager.js') }}"></script>

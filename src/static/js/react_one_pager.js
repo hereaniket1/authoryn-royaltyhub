@@ -1,4 +1,6 @@
   const ROYALTY_TABLE_COLUMNS = [
+    { key: "id", label: "ID" },
+    { key: "source_platform", label: "Source" },
     { key: "title", label: "Title" },
     { key: "author", label: "Author" },
     { key: "asin_isbn", label: "ASIN / ISBN" },
@@ -23,8 +25,11 @@
   ];
 
   const REPORTING_TABLE_COLUMNS = [
+    { key: "id", label: "ID" },
+    { key: "source_platform", label: "Source" },
     { key: "title", label: "Title" },
     { key: "author", label: "Author" },
+    { key: "product_id", label: "Product ID" },
     { key: "marketplace", label: "Marketplace" },
     { key: "country_code", label: "Country" },
     { key: "units_sold", label: "Units Sold" },
@@ -46,38 +51,38 @@
 
   const reportingFilters = [
     "report_month",
+    "source_platform",
     "normalized_title",
-    "title",
-    "author",
     "marketplace",
     "country_code",
-    "units_sold",
-    "units_refunded",
-    "royalty_type",
-    "payout_plan",
-    "net_units_sold",
-    "currency",
-    "base_currency",
-    "earnings",
-    "earnings_in_base_currency",
-    "avg_list_price_without_tax",
-    "avg_offer_price_without_tax",
-    "avg_file_size_mb",
-    "avg_delivery_manufacturing_cost"
+    "currency"
   ];
 
   const landingPage = document.getElementById("landingPage");
   const reportingPage = document.getElementById("reportingPage");
+  const authGate = document.getElementById("authGate");
   const chatArea = document.getElementById("chatArea");
+  const composerWrap = document.getElementById("composerWrap");
   const queryEl = document.getElementById("query");
   const composer = document.getElementById("composer");
   const sendBtn = document.getElementById("sendBtn");
+  const attachFileBtn = document.getElementById("attachFileBtn");
+  const fileInput = document.getElementById("fileInput");
   const filePill = document.getElementById("filePill");
   const fileName = document.getElementById("fileName");
   const removeFileBtn = document.getElementById("removeFileBtn");
   const loginBtn = document.getElementById("loginBtn");
+  const gateLoginBtn = document.getElementById("gateLoginBtn");
   const logoutBtn = document.getElementById("logoutBtn");
   const userChip = document.getElementById("userChip");
+  const reportingLink = document.getElementById("reportingLink");
+  const deleteAllDataBtn = document.getElementById("deleteAllDataBtn");
+  const recordOverlay = document.getElementById("recordOverlay");
+  const recordOverlayTitle = document.getElementById("recordOverlayTitle");
+  const recordOverlayContent = document.getElementById("recordOverlayContent");
+  const closeRecordOverlayBtn = document.getElementById("closeRecordOverlayBtn");
+  const cancelRecordBtn = document.getElementById("cancelRecordBtn");
+  const deleteRecordBtn = document.getElementById("deleteRecordBtn");
 
   let draggedFile = null;
   let currentUser = null;
@@ -85,36 +90,73 @@
   let reportingTotalPages = 1;
   let reportingSortColumn = "";
   let reportingSortDirection = "asc";
+  let activeRecordId = null;
 
   function isReportingRoute(){
     return window.location.pathname === "/reporting";
+  }
+
+  function updateAuthUI(){
+    const isAuthenticated = Boolean(currentUser);
+
+    reportingLink.classList.toggle("hidden", !isAuthenticated);
+    deleteAllDataBtn.classList.toggle("hidden", !isAuthenticated);
+    loginBtn.classList.toggle("hidden", isAuthenticated);
+    logoutBtn.classList.toggle("hidden", !isAuthenticated);
+
+    if(isAuthenticated){
+      authGate.classList.add("hidden");
+      composerWrap.classList.remove("hidden");
+      chatArea.classList.remove("hidden");
+    } else {
+      authGate.classList.remove("hidden");
+      composerWrap.classList.add("hidden");
+      chatArea.classList.add("hidden");
+      showFile(null);
+      queryEl.value = "";
+    }
   }
 
   function showCorrectPage(){
     if(isReportingRoute()){
       landingPage.classList.remove("active");
       reportingPage.classList.add("active");
-      loadReportingData(1);
+      if(currentUser){
+        loadReportingMonths();
+        loadReportingData(1);
+      }
     } else {
       reportingPage.classList.remove("active");
       landingPage.classList.add("active");
-      setTimeout(() => queryEl && queryEl.focus(), 50);
+      if(currentUser){
+        setTimeout(() => queryEl && queryEl.focus(), 50);
+      }
     }
   }
 
   function formatCell(value, key){
     if(value === null || value === undefined || value === "") return "—";
 
+    if(typeof value === "object"){
+      return JSON.stringify(value, null, 2);
+    }
+
     if(key === "created_at" || key === "updated_at"){
       const d = new Date(value);
       return Number.isNaN(d.getTime()) ? String(value) : d.toLocaleString();
+    }
+
+    if(key === "report_month"){
+      const d = new Date(value);
+      return Number.isNaN(d.getTime()) ? String(value) : d.toLocaleDateString(undefined, { month: "2-digit", year: "numeric" });
     }
 
     const numeric = new Set([
       "units_sold", "units_refunded", "net_units_sold",
       "avg_list_price_without_tax", "avg_offer_price_without_tax",
       "avg_file_size_mb", "avg_delivery_manufacturing_cost",
-      "earnings", "earnings_in_base_currency", "fx_rate"
+      "earnings", "earnings_in_base_currency", "fx_rate",
+      "royalty_rate", "payee_split", "net_sales"
     ]);
 
     if(numeric.has(key)){
@@ -161,6 +203,11 @@
 
   function humanizeDynamicColumn(key){
     const labels = {
+      id: "ID",
+      source_platform: "Source",
+      product_id: "Product ID",
+      provider_product_id: "Provider Product ID",
+      royalty_earner: "Royalty Earner",
       title: "Title",
       author: "Author",
       asin_isbn: "ASIN / ISBN",
@@ -171,7 +218,14 @@
       net_units_sold: "Net Units Sold / KENP",
       royalty_type: "Royalty Type",
       payout_plan: "Payout Plan",
+      transaction_type: "Transaction Type",
+      purchase_type: "Purchase Type",
+      offer: "Offer",
+      royalty_rule: "Royalty Rule",
       currency: "Currency",
+      royalty_rate: "Royalty Rate",
+      payee_split: "Payee Split",
+      net_sales: "Net Sales",
       avg_list_price_without_tax: "Avg. List Price (No Tax)",
       avg_offer_price_without_tax: "Avg. Offer Price (No Tax)",
       avg_file_size_mb: "Avg. File Size (MB)",
@@ -180,6 +234,7 @@
       base_currency: "Base Currency",
       earnings_in_base_currency: "Earnings in Base Currency",
       fx_rate: "FX Rate",
+      report_month: "Report Month",
       created_at: "Created At",
       updated_at: "Updated At"
     };
@@ -192,16 +247,26 @@
   function formatDynamicCell(value, key){
     if(value === null || value === undefined || value === "") return "—";
 
+    if(typeof value === "object"){
+      return JSON.stringify(value, null, 2);
+    }
+
     if(key === "created_at" || key === "updated_at"){
       const d = new Date(value);
       return Number.isNaN(d.getTime()) ? String(value) : d.toLocaleString();
+    }
+
+    if(key === "report_month"){
+      const d = new Date(value);
+      return Number.isNaN(d.getTime()) ? String(value) : d.toLocaleDateString(undefined, { month: "2-digit", year: "numeric" });
     }
 
     const numericKeys = new Set([
       "units_sold", "units_refunded", "net_units_sold",
       "avg_list_price_without_tax", "avg_offer_price_without_tax",
       "avg_file_size_mb", "avg_delivery_manufacturing_cost",
-      "earnings", "earnings_in_base_currency", "fx_rate"
+      "earnings", "earnings_in_base_currency", "fx_rate",
+      "royalty_rate", "payee_split", "net_sales"
     ]);
 
     if(numericKeys.has(key)){
@@ -322,7 +387,7 @@
       fileName.innerText = "";
       filePill.style.display = "none";
     }
-    queryEl.focus();
+    if(currentUser) queryEl.focus();
   }
 
   async function checkAuth(){
@@ -333,17 +398,15 @@
       if(data.authenticated){
         currentUser = data.user;
         userChip.innerText = data.user.email || data.user.name || "Signed in";
-        loginBtn.classList.add("hidden");
-        logoutBtn.classList.remove("hidden");
       } else {
         currentUser = null;
         userChip.innerText = "";
-        loginBtn.classList.remove("hidden");
-        logoutBtn.classList.add("hidden");
       }
     } catch(e) {
       currentUser = null;
     }
+
+    updateAuthUI();
   }
 
   function openLogin(nextUrl){
@@ -358,17 +421,36 @@
     if(event.data && event.data.type === "oauth_success"){
       await checkAuth();
       if(isReportingRoute() && currentUser){
+        loadReportingMonths();
         loadReportingData(1);
+      } else if(currentUser && chatArea.children.length === 0) {
+        addMessage("Welcome to The - Royalty Hub. Ask me about royalty performance, or upload a KDP or ACX royalty statement.", "assistant");
       }
     }
   });
 
   loginBtn.addEventListener("click", () => openLogin(window.location.pathname || "/"));
+  gateLoginBtn.addEventListener("click", () => openLogin(window.location.pathname || "/"));
 
   logoutBtn.addEventListener("click", async () => {
     await fetch("/auth/logout", { method: "POST" });
     await checkAuth();
     if(isReportingRoute()) window.location.href = "/";
+  });
+
+  deleteAllDataBtn.addEventListener("click", async () => {
+    const ok = window.confirm("Delete all your royalty data and your user account? This cannot be undone.");
+    if(!ok) return;
+
+    const res = await fetch("/api/me/data", { method: "DELETE" });
+    if(!res.ok){
+      window.alert("Failed to delete your data.");
+      return;
+    }
+
+    currentUser = null;
+    updateAuthUI();
+    window.location.href = "/";
   });
 
   async function callAIAssistance(query){
@@ -472,6 +554,7 @@
 
     queryEl.value = "";
     showFile(null);
+    fileInput.value = "";
 
     try {
       if(query){
@@ -519,6 +602,24 @@
 
   removeFileBtn.addEventListener("click", () => showFile(null));
 
+  attachFileBtn.addEventListener("click", () => fileInput.click());
+
+  fileInput.addEventListener("change", () => {
+    if(fileInput.files && fileInput.files.length > 0){
+      showFile(fileInput.files[0]);
+    }
+  });
+
+  function renderReportingCell(row, column){
+    const value = formatCell(row[column.key], column.key);
+
+    if(column.key === "id"){
+      return `<button class="record-id-link" data-record-id="${escapeHtml(row.id)}" type="button">${escapeHtml(value)}</button>`;
+    }
+
+    return escapeHtml(value);
+  }
+
 
   function renderReportingTable(records, title, meta){
     if(!records || records.length === 0){
@@ -551,7 +652,7 @@
             </thead>
             <tbody>
               ${records.map(row => `
-                <tr>${REPORTING_TABLE_COLUMNS.map(c => `<td>${formatCell(row[c.key], c.key)}</td>`).join("")}</tr>
+                <tr>${REPORTING_TABLE_COLUMNS.map(c => `<td>${renderReportingCell(row, c)}</td>`).join("")}</tr>
               `).join("")}
             </tbody>
           </table>
@@ -576,6 +677,14 @@
     });
   }
 
+  function attachReportingRecordEvents(){
+    document.querySelectorAll("#reportingTable .record-id-link[data-record-id]").forEach(button => {
+      button.addEventListener("click", () => {
+        openRecordOverlay(button.getAttribute("data-record-id"));
+      });
+    });
+  }
+
   function escapeHtml(value){
     return String(value ?? "")
       .replace(/&/g, "&amp;")
@@ -583,6 +692,83 @@
       .replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;")
       .replace(/'/g, "&#039;");
+  }
+
+  async function loadReportingMonths(){
+    const select = document.getElementById("filter_report_month");
+    if(!select || !currentUser) return;
+
+    const currentValue = select.value;
+    const res = await fetch("/api/reporting/months");
+
+    if(!res.ok) return;
+
+    const payload = await res.json();
+    const months = payload.results || [];
+
+    select.innerHTML = `<option value="">All available months</option>` +
+      months.map(month => `<option value="${escapeHtml(month.value)}">${escapeHtml(month.label)}</option>`).join("");
+
+    if(currentValue && months.some(month => month.value === currentValue)){
+      select.value = currentValue;
+    }
+  }
+
+  function renderRecordDetails(record){
+    const keys = Object.keys(record || {});
+
+    return `
+      <div class="record-detail-grid">
+        ${keys.map(key => `
+          <div class="record-detail-label">${escapeHtml(humanizeDynamicColumn(key))}</div>
+          <div class="record-detail-value">${escapeHtml(formatDynamicCell(record[key], key))}</div>
+        `).join("")}
+      </div>`;
+  }
+
+  async function openRecordOverlay(recordId){
+    if(!recordId) return;
+
+    activeRecordId = recordId;
+    recordOverlayTitle.innerText = `Royalty Record #${recordId}`;
+    recordOverlayContent.innerHTML = `<div class="result-note">Loading record...</div>`;
+    recordOverlay.classList.remove("hidden");
+
+    const res = await fetch(`/api/reporting/${encodeURIComponent(recordId)}`);
+
+    if(!res.ok){
+      recordOverlayContent.innerHTML = `<div class="result-note result-warning">Failed to load this record.</div>`;
+      return;
+    }
+
+    const payload = await res.json();
+    recordOverlayContent.innerHTML = renderRecordDetails(payload.results || {});
+  }
+
+  function closeRecordOverlay(){
+    activeRecordId = null;
+    recordOverlay.classList.add("hidden");
+    recordOverlayContent.innerHTML = "";
+  }
+
+  async function deleteActiveRecord(){
+    if(!activeRecordId) return;
+
+    const ok = window.confirm("Do you want to delete this record?");
+    if(!ok) return;
+
+    const res = await fetch(`/api/reporting/${encodeURIComponent(activeRecordId)}`, {
+      method: "DELETE"
+    });
+
+    if(!res.ok){
+      window.alert("Failed to delete this record.");
+      return;
+    }
+
+    closeRecordOverlay();
+    loadReportingMonths();
+    loadReportingData(reportingPageNo);
   }
 
   async function loadReportingData(page){
@@ -644,6 +830,7 @@
     );
 
     attachReportingSortEvents();
+    attachReportingRecordEvents();
 
     document.getElementById("prevPageBtn").disabled = reportingPageNo <= 1;
     document.getElementById("nextPageBtn").disabled = reportingPageNo >= reportingTotalPages;
@@ -669,11 +856,21 @@
     if(reportingPageNo < reportingTotalPages) loadReportingData(reportingPageNo + 1);
   });
 
+  closeRecordOverlayBtn.addEventListener("click", closeRecordOverlay);
+  cancelRecordBtn.addEventListener("click", closeRecordOverlay);
+  deleteRecordBtn.addEventListener("click", deleteActiveRecord);
+  recordOverlay.addEventListener("click", (event) => {
+    if(event.target === recordOverlay) closeRecordOverlay();
+  });
+
   reportingFilters.forEach(key => {
     const el = document.getElementById("filter_" + key);
     if(el){
       el.addEventListener("keydown", (event) => {
         if(event.key === "Enter") loadReportingData(1);
+      });
+      el.addEventListener("change", () => {
+        if(key === "report_month" || key === "source_platform") loadReportingData(1);
       });
     }
   });
@@ -681,7 +878,7 @@
   (async function init(){
     await checkAuth();
     showCorrectPage();
-    if(!isReportingRoute()){
-      addMessage("Welcome to Athoryn. Ask me about royalty performance, or upload a KDP royalty statement.", "assistant");
+    if(currentUser && !isReportingRoute()){
+      addMessage("Welcome to The - Royalty Hub. Ask me about royalty performance, or upload a KDP or ACX royalty statement.", "assistant");
     }
   })();
