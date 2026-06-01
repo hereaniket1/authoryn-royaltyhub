@@ -5,7 +5,10 @@ from flask import Flask, render_template, request, jsonify, session, redirect, u
 import os
 from functools import wraps
 from fastembed import TextEmbedding
-import royalty_db_service
+try:
+    from . import royalty_db_service
+except ImportError:
+    import royalty_db_service
 model = TextEmbedding()
 
 from authlib.integrations.flask_client import OAuth
