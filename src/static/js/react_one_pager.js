@@ -59,8 +59,15 @@
   ];
 
   const landingPage = document.getElementById("landingPage");
+  const aiPage = document.getElementById("aiPage");
+  const settingsPage = document.getElementById("settingsPage");
+  const dashboardPage = document.getElementById("dashboardPage");
   const reportingPage = document.getElementById("reportingPage");
+  const homeDashboard = document.getElementById("homeDashboard");
   const authGate = document.getElementById("authGate");
+  const authGateSettings = document.getElementById("authGateSettings");
+  const settingsCard = document.getElementById("settingsCard");
+  const settingsResults = document.getElementById("settingsResults");
   const chatArea = document.getElementById("chatArea");
   const composerWrap = document.getElementById("composerWrap");
   const queryEl = document.getElementById("query");
@@ -73,8 +80,19 @@
   const removeFileBtn = document.getElementById("removeFileBtn");
   const loginBtn = document.getElementById("loginBtn");
   const gateLoginBtn = document.getElementById("gateLoginBtn");
+  const gateLoginBtnSettings = document.getElementById("gateLoginBtnSettings");
   const logoutBtn = document.getElementById("logoutBtn");
-  const userChip = document.getElementById("userChip");
+  const userMenuBtn = document.getElementById("userMenuBtn");
+  const userMenu = document.getElementById("userMenu");
+  const userAvatar = document.getElementById("userAvatar");
+  const userName = document.getElementById("userName");
+  const userEmail = document.getElementById("userEmail");
+  const welcomeTitle = document.getElementById("welcomeTitle");
+  const welcomeSubtitle = document.getElementById("welcomeSubtitle");
+  const welcomeAvatar = document.getElementById("welcomeAvatar");
+  const aiAssistanceLink = document.getElementById("aiAssistanceLink");
+  const settingsLink = document.getElementById("settingsLink");
+  const settingsUploadBtn = document.getElementById("settingsUploadBtn");
   const reportingLink = document.getElementById("reportingLink");
   const deleteAllDataBtn = document.getElementById("deleteAllDataBtn");
   const recordOverlay = document.getElementById("recordOverlay");
@@ -91,46 +109,103 @@
   let reportingSortColumn = "";
   let reportingSortDirection = "asc";
   let activeRecordId = null;
+  let pendingUploadTarget = "home";
 
   function isReportingRoute(){
     return window.location.pathname === "/reporting";
+  }
+
+  function isDashboardRoute(){
+    return window.location.pathname === "/dashboard";
+  }
+
+  function isAIRoute(){
+    return window.location.pathname === "/ai-assistance";
+  }
+
+  function isSettingsRoute(){
+    return window.location.pathname === "/settings";
   }
 
   function updateAuthUI(){
     const isAuthenticated = Boolean(currentUser);
 
     reportingLink.classList.toggle("hidden", !isAuthenticated);
-    deleteAllDataBtn.classList.toggle("hidden", !isAuthenticated);
-    loginBtn.classList.toggle("hidden", isAuthenticated);
-    logoutBtn.classList.toggle("hidden", !isAuthenticated);
+    homeDashboard.classList.remove("hidden");
+    authGate.classList.toggle("hidden", isAuthenticated);
+    authGateSettings.classList.toggle("hidden", isAuthenticated);
+    settingsCard.classList.toggle("hidden", !isAuthenticated);
+    composerWrap.classList.toggle("hidden", !isAuthenticated || !isAIRoute());
+    chatArea.classList.toggle("hidden", !isAuthenticated || !isAIRoute());
 
     if(isAuthenticated){
-      authGate.classList.add("hidden");
-      composerWrap.classList.remove("hidden");
-      chatArea.classList.remove("hidden");
+      const displayName = currentUser.full_name || currentUser.name || currentUser.email || "there";
+      const displayEmail = currentUser.email || "Signed in";
+      userName.innerText = displayName;
+      userEmail.innerText = displayEmail;
+      userAvatar.innerText = (displayName || "U").trim().slice(0, 1).toUpperCase();
+      welcomeTitle.innerText = `Welcome back, ${displayName}`;
+      welcomeSubtitle.innerText = "Here's what’s happening with your royalties.";
+      if(currentUser.avatar_url || currentUser.picture){
+        welcomeAvatar.src = currentUser.avatar_url || currentUser.picture;
+        welcomeAvatar.classList.remove("hidden");
+      } else {
+        welcomeAvatar.classList.add("hidden");
+      }
+      loginBtn.classList.add("hidden");
+      logoutBtn.classList.remove("hidden");
+      deleteAllDataBtn.classList.remove("hidden");
     } else {
-      authGate.classList.remove("hidden");
-      composerWrap.classList.add("hidden");
-      chatArea.classList.add("hidden");
+      userName.innerText = "Welcome";
+      userEmail.innerText = "Please log in";
+      userAvatar.innerText = "?";
+      welcomeTitle.innerText = "Welcome back";
+      welcomeSubtitle.innerText = "Please log in to view your royalty dashboard.";
+      welcomeAvatar.classList.add("hidden");
+      loginBtn.classList.remove("hidden");
+      logoutBtn.classList.add("hidden");
+      deleteAllDataBtn.classList.add("hidden");
       showFile(null);
       queryEl.value = "";
     }
   }
 
   function showCorrectPage(){
+    landingPage.classList.remove("active");
+    aiPage.classList.remove("active");
+    settingsPage.classList.remove("active");
+    dashboardPage.classList.remove("active");
+    reportingPage.classList.remove("active");
+
+    if(isAIRoute()){
+      aiPage.classList.add("active");
+      return;
+    }
+
+    if(isSettingsRoute()){
+      settingsPage.classList.add("active");
+      return;
+    }
+
+    if(isDashboardRoute()){
+      landingPage.classList.add("active");
+      return;
+    }
+
     if(isReportingRoute()){
-      landingPage.classList.remove("active");
+      document.body.classList.add("dashboard-view");
       reportingPage.classList.add("active");
       if(currentUser){
         loadReportingMonths();
         loadReportingData(1);
       }
-    } else {
-      reportingPage.classList.remove("active");
-      landingPage.classList.add("active");
-      if(currentUser){
-        setTimeout(() => queryEl && queryEl.focus(), 50);
-      }
+      return;
+    }
+
+    document.body.classList.remove("dashboard-view");
+    landingPage.classList.add("active");
+    if(currentUser){
+      setTimeout(() => queryEl && queryEl.focus(), 50);
     }
   }
 
@@ -318,19 +393,7 @@
   }
 
   function appendDynamicResultBlock({message, type, records, title, meta}){
-    const block = document.createElement("div");
-    block.className = "result-block";
-
-    let html = "";
-    if(message){
-      html += `<div class="result-note ${type === "success" ? "result-success" : "result-warning"}">${message}</div>`;
-    }
-    if(records){
-      html += renderDynamicResultTable(records, title, meta);
-    }
-
-    block.innerHTML = html;
-    chatArea.appendChild(block);
+    appendResultTarget(chatArea, {message, type, records, title, meta}, true);
     chatArea.scrollTop = chatArea.scrollHeight;
   }
 
@@ -343,6 +406,11 @@
   }
 
   function appendResultBlock({message, type, records, title, meta}){
+    appendResultTarget(chatArea, {message, type, records, title, meta}, false);
+    chatArea.scrollTop = chatArea.scrollHeight;
+  }
+
+  function appendResultTarget(target, {message, type, records, title, meta}, isDynamic){
     const block = document.createElement("div");
     block.className = "result-block";
 
@@ -351,12 +419,13 @@
       html += `<div class="result-note ${type === "success" ? "result-success" : "result-warning"}">${message}</div>`;
     }
     if(records){
-      html += renderTable(records, title, meta);
+      html += isDynamic
+        ? renderDynamicResultTable(records, title, meta)
+        : renderTable(records, title, meta);
     }
 
     block.innerHTML = html;
-    chatArea.appendChild(block);
-    chatArea.scrollTop = chatArea.scrollHeight;
+    target.appendChild(block);
   }
 
   function getUploadData(response){
@@ -397,10 +466,8 @@
 
       if(data.authenticated){
         currentUser = data.user;
-        userChip.innerText = data.user.email || data.user.name || "Signed in";
       } else {
         currentUser = null;
-        userChip.innerText = "";
       }
     } catch(e) {
       currentUser = null;
@@ -411,7 +478,7 @@
 
   function openLogin(nextUrl){
     const url = `/auth/google/login?popup=true&next=${encodeURIComponent(nextUrl || window.location.pathname || "/")}`;
-    const popup = window.open(url, "athoryn_google_login", "width=520,height=680");
+    const popup = window.open(url, "royalty_hub_google_login", "width=520,height=680");
     if(!popup){
       window.location.href = url.replace("popup=true&", "");
     }
@@ -420,22 +487,42 @@
   window.addEventListener("message", async (event) => {
     if(event.data && event.data.type === "oauth_success"){
       await checkAuth();
-      if(isReportingRoute() && currentUser){
-        loadReportingMonths();
-        loadReportingData(1);
-      } else if(currentUser && chatArea.children.length === 0) {
-        addMessage("Welcome to The - Royalty Hub. Ask me about royalty performance, or upload a KDP or ACX royalty statement.", "assistant");
+      showCorrectPage();
+      if(currentUser && !isReportingRoute() && chatArea.children.length === 0) {
+        addMessage("Welcome to The Royalty Hub. Ask me about royalty performance, or upload a KDP or ACX royalty statement.", "assistant");
       }
     }
   });
 
   loginBtn.addEventListener("click", () => openLogin(window.location.pathname || "/"));
   gateLoginBtn.addEventListener("click", () => openLogin(window.location.pathname || "/"));
+  gateLoginBtnSettings.addEventListener("click", () => openLogin("/settings"));
+  settingsUploadBtn.addEventListener("click", () => {
+    pendingUploadTarget = "settings";
+    fileInput.value = "";
+    fileInput.click();
+  });
+  aiAssistanceLink.addEventListener("click", (event) => {
+    if(!currentUser){
+      event.preventDefault();
+      openLogin("/ai-assistance");
+    }
+  });
+  settingsLink.addEventListener("click", (event) => {
+    if(!currentUser){
+      event.preventDefault();
+      openLogin("/settings");
+    }
+  });
+  userMenuBtn.addEventListener("click", () => {
+    userMenu.classList.toggle("hidden");
+    userMenuBtn.setAttribute("aria-expanded", userMenu.classList.contains("hidden") ? "false" : "true");
+  });
 
   logoutBtn.addEventListener("click", async () => {
     await fetch("/auth/logout", { method: "POST" });
     await checkAuth();
-    if(isReportingRoute()) window.location.href = "/";
+    window.location.href = "/";
   });
 
   deleteAllDataBtn.addEventListener("click", async () => {
@@ -491,13 +578,16 @@
     return data;
   }
 
-  async function uploadFile(file){
+  async function uploadFile(file, options = {}){
     if(!file) return null;
+    const target = options.target === "settings" ? settingsResults : chatArea;
 
     const formData = new FormData();
     formData.append("file", file);
 
-    addMessage("Uploading file: " + file.name, "user");
+    if(options.target !== "settings"){
+      addMessage("Uploading file: " + file.name, "user");
+    }
 
     const res = await fetch("/upload", {
       method: "POST",
@@ -515,30 +605,30 @@
     const data = getUploadData(payload);
 
     if(data && data.status === "ALREADY_EXISTS"){
-      appendResultBlock({
+      appendResultTarget(target, {
         message: data.message || `Data already exists for report_month ${data.report_month}. Insert skipped.`,
         type: "warning",
         records: data.sample_records || [],
         title: `Sample records for ${data.report_month}`,
         meta: `${data.existing_record_count || 0} existing records`
-      });
+      }, false);
       return payload;
     }
 
     if(data && data.status === "INSERTED"){
-      appendResultBlock({
+      appendResultTarget(target, {
         message: `Data uploaded for ${data.report_month}. Inserted rows: ${data.inserted_rows}.`,
         type: "success"
-      });
+      }, false);
       return payload;
     }
 
-    appendResultBlock({
+    appendResultTarget(target, {
       message: "Upload completed.",
       type: "success",
       records: data && data.sample_records ? data.sample_records : null,
       title: "Sample records"
-    });
+    }, false);
 
     return payload;
   }
@@ -606,7 +696,14 @@
 
   fileInput.addEventListener("change", () => {
     if(fileInput.files && fileInput.files.length > 0){
-      showFile(fileInput.files[0]);
+      const selectedFile = fileInput.files[0];
+      if(pendingUploadTarget === "settings"){
+        uploadFile(selectedFile, { target: "settings" });
+        pendingUploadTarget = "home";
+        fileInput.value = "";
+      } else {
+        showFile(selectedFile);
+      }
     }
   });
 
@@ -794,6 +891,8 @@
     const target = document.getElementById("reportingTable");
     const summary = document.getElementById("reportingSummary");
 
+    if(!status || !target || !summary) return;
+
     status.innerHTML = "";
     target.innerHTML = `
       <div class="table-card">
@@ -836,25 +935,37 @@
     document.getElementById("nextPageBtn").disabled = reportingPageNo >= reportingTotalPages;
   }
 
-  document.getElementById("applyFiltersBtn").addEventListener("click", () => loadReportingData(1));
+  const applyFiltersBtn = document.getElementById("applyFiltersBtn");
+  if(applyFiltersBtn){
+    applyFiltersBtn.addEventListener("click", () => loadReportingData(1));
+  }
 
-  document.getElementById("clearFiltersBtn").addEventListener("click", () => {
-    reportingFilters.forEach(key => {
-      const el = document.getElementById("filter_" + key);
-      if(el) el.value = "";
+  const clearFiltersBtn = document.getElementById("clearFiltersBtn");
+  if(clearFiltersBtn){
+    clearFiltersBtn.addEventListener("click", () => {
+      reportingFilters.forEach(key => {
+        const el = document.getElementById("filter_" + key);
+        if(el) el.value = "";
+      });
+      reportingSortColumn = "";
+      reportingSortDirection = "asc";
+      loadReportingData(1);
     });
-    reportingSortColumn = "";
-    reportingSortDirection = "asc";
-    loadReportingData(1);
-  });
+  }
 
-  document.getElementById("prevPageBtn").addEventListener("click", () => {
-    if(reportingPageNo > 1) loadReportingData(reportingPageNo - 1);
-  });
+  const prevPageBtn = document.getElementById("prevPageBtn");
+  if(prevPageBtn){
+    prevPageBtn.addEventListener("click", () => {
+      if(reportingPageNo > 1) loadReportingData(reportingPageNo - 1);
+    });
+  }
 
-  document.getElementById("nextPageBtn").addEventListener("click", () => {
-    if(reportingPageNo < reportingTotalPages) loadReportingData(reportingPageNo + 1);
-  });
+  const nextPageBtn = document.getElementById("nextPageBtn");
+  if(nextPageBtn){
+    nextPageBtn.addEventListener("click", () => {
+      if(reportingPageNo < reportingTotalPages) loadReportingData(reportingPageNo + 1);
+    });
+  }
 
   closeRecordOverlayBtn.addEventListener("click", closeRecordOverlay);
   cancelRecordBtn.addEventListener("click", closeRecordOverlay);
@@ -878,7 +989,7 @@
   (async function init(){
     await checkAuth();
     showCorrectPage();
-    if(currentUser && !isReportingRoute()){
-      addMessage("Welcome to The - Royalty Hub. Ask me about royalty performance, or upload a KDP or ACX royalty statement.", "assistant");
+    if(currentUser && !isReportingRoute() && !isAIRoute() && !isSettingsRoute()){
+      addMessage("Welcome to The Royalty Hub. Ask me about royalty performance, or upload a KDP or ACX royalty statement.", "assistant");
     }
   })();

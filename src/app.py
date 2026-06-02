@@ -423,7 +423,9 @@ def auth_me():
             "id": session.get("user_id"),
             "email": session.get("user_email"),
             "name": session.get("user_name"),
-            "picture": session.get("user_avatar")
+            "full_name": session.get("user_name"),
+            "picture": session.get("user_avatar"),
+            "avatar_url": session.get("user_avatar")
         }
     })
 
@@ -440,6 +442,22 @@ def auth_logout():
 @app.route("/reporting")
 @login_required
 def reporting_page():
+    return render_template("react_one_pager.html")
+
+
+@app.route("/dashboard")
+@login_required
+def dashboard_page():
+    return render_template("react_one_pager.html")
+
+
+@app.route("/ai-assistance")
+def ai_assistance_page():
+    return render_template("react_one_pager.html")
+
+
+@app.route("/settings")
+def settings_page():
     return render_template("react_one_pager.html")
 
 
