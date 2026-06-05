@@ -110,6 +110,7 @@
   let reportingSortDirection = "asc";
   let activeRecordId = null;
   let pendingUploadTarget = "home";
+  let lastAnalyticsPlan = null;
 
   function isReportingRoute(){
     return window.location.pathname === "/reporting";
@@ -392,6 +393,101 @@
       </div>`;
   }
 
+  function detectAnalyticsValueKey(records, preferredKey){
+    const candidateKeys = [
+      preferredKey,
+      "earnings",
+      "units_sold",
+      "units_refunded",
+      "net_units_sold",
+      "change_amount",
+      "metric_value",
+      "current_metric_value"
+    ].filter(Boolean);
+
+    for(const key of candidateKeys){
+      if(records.some(row => row && row[key] !== undefined && row[key] !== null)){
+        return key;
+      }
+    }
+
+    for(const row of records){
+      for(const [key, value] of Object.entries(row || {})){
+        if(typeof value === "number" || (value !== "" && !Number.isNaN(Number(value)))){
+          return key;
+        }
+      }
+    }
+
+    return null;
+  }
+
+  function renderAnalyticsCharts(records, plan){
+    if(!records || records.length === 0) return "";
+
+    const valueKey = detectAnalyticsValueKey(records, plan && plan.metric);
+    const chartRows = records.slice(0, 6).map((row, index) => {
+      const label = row.title || row.author || row.marketplace || row.country || row.country_code || row.source_platform || row.report_month || `Item ${index + 1}`;
+      const value = Number(row && valueKey ? row[valueKey] : 0) || 0;
+      return { label: String(label), value };
+    });
+
+    const maxValue = Math.max(...chartRows.map(item => item.value), 1);
+    const totalValue = chartRows.reduce((sum, item) => sum + item.value, 0);
+    const colors = ["#6d3df4", "#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6"];
+
+    let offset = 0;
+    const donutSegments = chartRows
+      .filter(item => item.value > 0)
+      .map((item, idx) => {
+        const start = offset;
+        offset += (item.value / (totalValue || 1)) * 100;
+        const end = offset;
+        return `${colors[idx % colors.length]} ${start}% ${end}%`;
+      })
+      .join(", ");
+
+    return `
+      <div class="analytics-charts">
+        <div class="chart-card chart-card-bar">
+          <div class="chart-card-header">
+            <span class="chart-card-title">Top ${valueKey ? humanizeDynamicColumn(valueKey) : "Values"}</span>
+            <span class="chart-card-meta">${chartRows.length} items</span>
+          </div>
+          <div class="bar-chart">
+            ${chartRows.map((item, idx) => `
+              <div class="bar-row">
+                <span class="bar-label">${escapeHtml(item.label)}</span>
+                <div class="bar-track"><i style="width:${(item.value / maxValue) * 100}%"></i></div>
+                <span class="bar-value">${escapeHtml(formatDynamicCell(item.value, valueKey || "metric"))}</span>
+              </div>
+            `).join("")}
+          </div>
+        </div>
+        <div class="chart-card chart-card-donut">
+          <div class="chart-card-header">
+            <span class="chart-card-title">Distribution</span>
+            <span class="chart-card-meta">${valueKey ? humanizeDynamicColumn(valueKey) : "Grouped share"}</span>
+          </div>
+          <div class="donut-visual" style="background: conic-gradient(${donutSegments || "#6d3df4 0% 100%"});">
+            <div>
+              <strong>${escapeHtml(formatDynamicCell(totalValue, valueKey || "metric"))}</strong>
+              <span>Total</span>
+            </div>
+          </div>
+          <div class="donut-legend">
+            ${chartRows.filter(item => item.value > 0).map((item, idx) => `
+              <div>
+                <span class="dot ${["purple","blue","green","orange","red","violet"][idx % 6]}"></span>
+                <strong>${escapeHtml(item.label)}</strong>
+                <b>${escapeHtml(formatDynamicCell(item.value, valueKey || "metric"))}</b>
+              </div>
+            `).join("")}
+          </div>
+        </div>
+      </div>`;
+  }
+
   function appendDynamicResultBlock({message, type, records, title, meta}){
     appendResultTarget(chatArea, {message, type, records, title, meta}, true);
     chatArea.scrollTop = chatArea.scrollHeight;
@@ -419,6 +515,9 @@
       html += `<div class="result-note ${type === "success" ? "result-success" : "result-warning"}">${message}</div>`;
     }
     if(records){
+      if(isDynamic){
+        html += renderAnalyticsCharts(records, lastAnalyticsPlan);
+      }
       html += isDynamic
         ? renderDynamicResultTable(records, title, meta)
         : renderTable(records, title, meta);
@@ -438,6 +537,15 @@
 
   function getAIContent(data){
     if(!data) return "No AI response returned.";
+    const payload = data.results || data;
+    if(payload && typeof payload === "object"){
+      if(payload.answer) return payload.answer;
+      if(payload.message) return payload.message;
+      if(payload.content) return payload.content;
+      if(payload.choices && payload.choices[0] && payload.choices[0].message){
+        return payload.choices[0].message.content || "No AI response returned.";
+      }
+    }
     if(data.choices && data.choices[0] && data.choices[0].message){
       return data.choices[0].message.content || "No AI response returned.";
     }
@@ -564,6 +672,7 @@
         : null;
 
     if(analytics){
+      lastAnalyticsPlan = analytics.plan || null;
       appendDynamicResultBlock({
         message: null,
         type: "success",

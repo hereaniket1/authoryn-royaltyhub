@@ -138,6 +138,38 @@ User question: {user_query}
 JSON:
 """
 
+def build_intent_prompt(user_query):
+    return f"""
+Classify the user query into exactly one intent.
+
+Return only valid JSON, no explanation.
+
+Allowed intents:
+analytics
+general
+
+Rules:
+- Use analytics when the user asks for report-like, comparative, ranked, trend, or filtered data over the royalty tables.
+- Use general when the user asks a normal question, explanation, help, greeting, or anything that does not require SQL/reporting.
+- If the query is ambiguous, choose general.
+
+Examples:
+Question: top earning titles in Germany
+JSON: {{"intent":"analytics","confidence":0.97}}
+
+Question: what does ACX mean
+JSON: {{"intent":"general","confidence":0.96}}
+
+Question: show me declining books this month
+JSON: {{"intent":"analytics","confidence":0.95}}
+
+Question: how do I upload a file
+JSON: {{"intent":"general","confidence":0.96}}
+
+User question: {user_query}
+JSON:
+"""
+
 ALLOWED_OPERATORS = {"=", "!="}
 
 def parse_llm_json(text):
@@ -150,6 +182,55 @@ def parse_llm_json(text):
         raise ValueError("LLM did not return JSON")
 
     return json.loads(text[start:end + 1])
+
+def is_probable_analytics_query(user_query):
+    text = (user_query or "").lower()
+    keywords = [
+        "top", "highest", "lowest", "compare", "comparison", "trend",
+        "decline", "declining", "report", "reports", "analytics",
+        "earnings", "units sold", "marketplace", "country", "month",
+        "by title", "by author", "by source", "filter", "show me"
+    ]
+    return any(keyword in text for keyword in keywords)
+
+def classify_query_intent(user_query):
+    prompt = build_intent_prompt(user_query)
+
+    try:
+        llm_response = huggingface_llm_query({
+            "messages": [
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            "model": "meta-llama/Llama-3.1-8B-Instruct"
+        })
+
+        content = llm_response.get("choices", [{}])[0].get("message", {}).get("content", "")
+        payload = parse_llm_json(re.sub(r'```json\s*|\s*```', '', content).strip())
+
+        intent = str(payload.get("intent", "general")).strip().lower()
+        confidence = float(payload.get("confidence", 0))
+
+        if intent not in {"analytics", "general"}:
+            intent = "general"
+
+        if confidence < 0.5:
+            intent = "general"
+
+        return {
+            "intent": intent,
+            "confidence": confidence,
+            "raw": payload
+        }
+    except Exception as error:
+        print("Intent classification fallback:", error)
+        return {
+            "intent": "analytics" if is_probable_analytics_query(user_query) else "general",
+            "confidence": 0.0,
+            "raw": None
+        }
 
 def validate_analytics_plan(plan):
     if plan.get("metric") not in ANALYTICS_METRICS:
@@ -311,6 +392,23 @@ def run_llm_sql_engine(conn, user_query):
         "data": rows
     }
 
+def route_user_query(conn, user_query):
+    intent = classify_query_intent(user_query)
+
+    if intent["intent"] == "analytics":
+        try:
+            return run_llm_sql_engine(conn, user_query)
+        except Exception as error:
+            print("Analytics route fallback:", error)
+
+    answer = run_llm_user_query(user_query)
+    return {
+        "type": "assistant",
+        "user_query": user_query,
+        "intent": intent,
+        "answer": answer
+    }
+
 @app.route("/")
 def index():
     return render_template("react_one_pager.html")
@@ -326,7 +424,7 @@ def post_query():
         return jsonify({"error": "Query is required"}), 400
 
     try:
-        result = run_llm_sql_engine(conn, input_text)
+        result = route_user_query(conn, input_text)
 
         return jsonify({
             "status": "ok",
