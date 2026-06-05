@@ -463,6 +463,10 @@ def delete_user_account_data(conn, user_id):
         "deleted_user": deleted_user is not None,
     }
 
+def execute_analytics_query(conn, sql, params):
+    with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+        cursor.execute(sql, params)
+        return cursor.fetchall()
 
 def _check_existing_feed_records(conn, user_id, source_platform, report_month):
     with conn.cursor(cursor_factory=RealDictCursor) as cursor:

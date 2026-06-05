@@ -1,10 +1,13 @@
 import json
+import re
 
 import requests
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for
 import os
 from functools import wraps
 from fastembed import TextEmbedding
+from psycopg2.extras import RealDictCursor
+
 try:
     from . import royalty_db_service
 except ImportError:
@@ -40,8 +43,6 @@ except Exception as error:
     print("DB Connected wrong!", error)
     conn = None
 
-
-
 def huggingface_llm_query(payload):
     header = {
         "Authorization": f"Bearer {HUGGINGFACE_AI_TOKEN}"
@@ -49,44 +50,8 @@ def huggingface_llm_query(payload):
     response = requests.post(HUGGINGFACE_API_URL, headers=header, json=payload)
     return response.json()
 
-# def ___huggingface_llm_query(prompt):
-#     headers = {
-#         "Authorization": f"Bearer {HUGGINGFACE_AI_TOKEN}",
-#         "Content-Type": "application/json"
-#     }
-#
-#     payload = {
-#         "inputs": prompt,
-#         "parameters": {
-#             "max_new_tokens": 160
-#         }
-#     }
-#     # TODO: Hardcoded here
-#     HUGGINGFACE_API_URL="https://router.huggingface.co/hf-inference/models/google/flan-t5-large"
-#     response = requests.post(
-#         HUGGINGFACE_API_URL,
-#         headers=headers,
-#         json=payload,
-#         timeout=60
-#     )
-#
-#     print("HF status:", response.status_code)
-#     print("HF body:", response.text)
-#
-#     response.raise_for_status()
-#     data = response.json()
-#
-#     if isinstance(data, list) and data:
-#         return data[0].get("generated_text", "")
-#
-#     if isinstance(data, dict):
-#         return data.get("generated_text", "")
-#
-#     return str(data)
-
 UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-
 
 def login_required(view_func):
     @wraps(view_func)
@@ -297,9 +262,7 @@ def compile_declining_books_sql(plan):
 
     return sql, [limit]
 
-def run_llm_sql_engine(conn, user_query):
-    prompt = build_analytics_prompt(user_query)
-
+def run_llm_user_query(user_query):
     # Call your LLM API here
     llm_response = huggingface_llm_query({
         "messages": [
@@ -312,25 +275,41 @@ def run_llm_sql_engine(conn, user_query):
     })
 
     content = llm_response.get("choices", [{}])[0].get("message", {}).get("content", "")
-    # content = jsonify(content)
     return content
-    # plan = json.loads(content)
-    # plan = validate_analytics_plan(plan)
 
-    # if plan["analysis_type"] == "trend_decline":
-    #     sql, params = compile_declining_books_sql(plan)
-    # else:
-    #     sql, params = compile_ranking_or_comparison_sql(plan)
+def run_llm_sql_engine(conn, user_query):
+    prompt = build_analytics_prompt(user_query)
 
-    # rows = execute_analytics_query(conn, sql, params)
+    # Call your LLM API here
+    llm_response = huggingface_llm_query({
+        "messages": [
+            {
+                "role": "user",
+                "content": f"{prompt}"
+            }
+        ],
+        "model": "meta-llama/Llama-3.1-8B-Instruct"
+    })
 
-    # return {
-    #     "type": "analytics",
-    #     "user_query": user_query,
-    #     "plan": plan,
-    #     "sql": sql,
-    #     "data": rows
-    # }
+    content = llm_response.get("choices", [{}])[0].get("message", {}).get("content", "")
+    json_str = re.sub(r'```json\s*|\s*```', '', content).strip()
+    plan = json.loads(json_str)
+    plan = validate_analytics_plan(plan)
+
+    if plan["analysis_type"] == "trend_decline":
+        sql, params = compile_declining_books_sql(plan)
+    else:
+        sql, params = compile_ranking_or_comparison_sql(plan)
+
+    rows = royalty_db_service.execute_analytics_query(conn, sql, params)
+
+    return {
+        "type": "analytics",
+        "user_query": user_query,
+        "plan": plan,
+        "sql": sql,
+        "data": rows
+    }
 
 @app.route("/")
 def index():
