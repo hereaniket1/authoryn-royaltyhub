@@ -130,11 +130,15 @@ def ensure_fx_schema(conn):
         """,
     ]
 
-    with conn.cursor() as cursor:
-        for statement in statements:
-            cursor.execute(statement)
+    try:
+        with conn.cursor() as cursor:
+            for statement in statements:
+                cursor.execute(statement)
 
-    conn.commit()
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
 
 
 def infer_base_currency_from_user_info(user_info):
@@ -523,44 +527,48 @@ def extract_kdp_report_month(excel_file):
 
 def upsert_google_user(conn, user_info):
     base_currency = infer_base_currency_from_user_info(user_info)
-    with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-        cursor.execute(
-            """
-            INSERT INTO app_users (
-                email,
-                full_name,
-                avatar_url,
-                google_sub,
-                email_verified,
-                base_currency,
-                last_login_at
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor.execute(
+                """
+                INSERT INTO app_users (
+                    email,
+                    full_name,
+                    avatar_url,
+                    google_sub,
+                    email_verified,
+                    base_currency,
+                    last_login_at
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, NOW())
+                ON CONFLICT (google_sub)
+                DO UPDATE SET
+                    email = EXCLUDED.email,
+                    full_name = EXCLUDED.full_name,
+                    avatar_url = EXCLUDED.avatar_url,
+                    email_verified = EXCLUDED.email_verified,
+                    base_currency = COALESCE(app_users.base_currency, EXCLUDED.base_currency),
+                    last_login_at = NOW(),
+                    updated_at = NOW()
+                RETURNING id, email, full_name, avatar_url
+                """,
+                (
+                    user_info.get("email"),
+                    user_info.get("name"),
+                    user_info.get("picture"),
+                    user_info.get("sub"),
+                    user_info.get("email_verified", False),
+                    base_currency,
+                )
             )
-            VALUES (%s, %s, %s, %s, %s, %s, NOW())
-            ON CONFLICT (google_sub)
-            DO UPDATE SET
-                email = EXCLUDED.email,
-                full_name = EXCLUDED.full_name,
-                avatar_url = EXCLUDED.avatar_url,
-                email_verified = EXCLUDED.email_verified,
-                base_currency = COALESCE(app_users.base_currency, EXCLUDED.base_currency),
-                last_login_at = NOW(),
-                updated_at = NOW()
-            RETURNING id, email, full_name, avatar_url
-            """,
-            (
-                user_info.get("email"),
-                user_info.get("name"),
-                user_info.get("picture"),
-                user_info.get("sub"),
-                user_info.get("email_verified", False),
-                base_currency,
-            )
-        )
 
-        user = cursor.fetchone()
+            user = cursor.fetchone()
 
-    conn.commit()
-    return user
+        conn.commit()
+        return user
+    except Exception:
+        conn.rollback()
+        raise
 
 
 def get_reporting_records(conn, user_id, filters=None, page=1, page_size=20):

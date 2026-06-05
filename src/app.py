@@ -45,6 +45,10 @@ if conn:
         royalty_db_service.ensure_fx_schema(conn)
     except Exception as error:
         print("FX schema init failed:", error)
+        try:
+            conn.rollback()
+        except Exception:
+            pass
 
 UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -111,15 +115,21 @@ def google_login():
 
 @app.route("/auth/google/callback")
 def google_callback():
+    try:
+        token = google.authorize_access_token()
 
-    token = google.authorize_access_token()
+        user_info = token.get("userinfo")
 
-    user_info = token.get("userinfo")
+        if not user_info:
+            user_info = google.userinfo()
 
-    if not user_info:
-        user_info = google.userinfo()
-
-    user = royalty_db_service.upsert_google_user(conn, user_info)
+        user = royalty_db_service.upsert_google_user(conn, user_info)
+    except Exception as error:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        raise error
 
     session["user_id"] = str(user["id"])
     session["user_email"] = user["email"]
