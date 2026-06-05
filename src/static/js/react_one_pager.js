@@ -92,9 +92,26 @@
   const welcomeAvatar = document.getElementById("welcomeAvatar");
   const aiAssistanceLink = document.getElementById("aiAssistanceLink");
   const settingsLink = document.getElementById("settingsLink");
+  const dashboardLink = document.getElementById("dashboardLink");
   const settingsUploadBtn = document.getElementById("settingsUploadBtn");
   const reportingLink = document.getElementById("reportingLink");
   const deleteAllDataBtn = document.getElementById("deleteAllDataBtn");
+  const dashboardRangeSelect = document.getElementById("dashboardRangeSelect");
+  const dashboardTotalRoyalties = document.getElementById("dashboardTotalRoyalties");
+  const dashboardTotalRoyaltiesDelta = document.getElementById("dashboardTotalRoyaltiesDelta");
+  const dashboardTotalUnitsSold = document.getElementById("dashboardTotalUnitsSold");
+  const dashboardTotalUnitsSoldDelta = document.getElementById("dashboardTotalUnitsSoldDelta");
+  const dashboardTotalTitlesSold = document.getElementById("dashboardTotalTitlesSold");
+  const dashboardTotalTitlesSoldDelta = document.getElementById("dashboardTotalTitlesSoldDelta");
+  const dashboardAverageRoyaltyPerUnit = document.getElementById("dashboardAverageRoyaltyPerUnit");
+  const dashboardAverageRoyaltyPerUnitDelta = document.getElementById("dashboardAverageRoyaltyPerUnitDelta");
+  const dashboardCustomRange = document.getElementById("dashboardCustomRange");
+  const dashboardCustomFrom = document.getElementById("dashboardCustomFrom");
+  const dashboardCustomTo = document.getElementById("dashboardCustomTo");
+  const salesCountryPanel = document.querySelector(".sales-country-panel");
+  const salesCountryChart = document.querySelector(".sales-country-panel .country-viz");
+  const royaltiesOverTimeChart = document.querySelector(".chart-panel .line-chart");
+  const royaltiesByFormatPanel = document.querySelector(".format-panel");
   const recordOverlay = document.getElementById("recordOverlay");
   const recordOverlayTitle = document.getElementById("recordOverlayTitle");
   const recordOverlayContent = document.getElementById("recordOverlayContent");
@@ -111,6 +128,7 @@
   let activeRecordId = null;
   let pendingUploadTarget = "home";
   let lastAnalyticsPlan = null;
+  let dashboardSummary = null;
 
   function isReportingRoute(){
     return window.location.pathname === "/reporting";
@@ -132,6 +150,7 @@
     const isAuthenticated = Boolean(currentUser);
 
     reportingLink.classList.toggle("hidden", !isAuthenticated);
+    dashboardLink.classList.toggle("hidden", !isAuthenticated);
     homeDashboard.classList.remove("hidden");
     authGate.classList.toggle("hidden", isAuthenticated);
     authGateSettings.classList.toggle("hidden", isAuthenticated);
@@ -156,6 +175,9 @@
       loginBtn.classList.add("hidden");
       logoutBtn.classList.remove("hidden");
       deleteAllDataBtn.classList.remove("hidden");
+      if(isDashboardRoute()){
+        loadDashboardSummary();
+      }
     } else {
       userName.innerText = "Welcome";
       userEmail.innerText = "Please log in";
@@ -189,7 +211,10 @@
     }
 
     if(isDashboardRoute()){
-      landingPage.classList.add("active");
+      dashboardPage.classList.add("active");
+      if(currentUser){
+        loadDashboardSummary();
+      }
       return;
     }
 
@@ -900,6 +925,230 @@
       .replace(/'/g, "&#039;");
   }
 
+  function formatDashboardCurrency(value){
+    const n = Number(value || 0);
+    return n.toLocaleString(undefined, {
+      style: "currency",
+      currency: (dashboardSummary && dashboardSummary.cards && dashboardSummary.cards.total_royalties && dashboardSummary.cards.total_royalties.base_currency) || "USD",
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    });
+  }
+
+  function formatDashboardNumber(value){
+    const n = Number(value || 0);
+    return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  }
+
+  function setDashboardDelta(node, metric){
+    if(!node || !metric) return;
+
+    const pct = Number(metric.delta_percent || 0);
+    const prefix = pct > 0 ? "↑" : pct < 0 ? "↓" : "—";
+    const rounded = Math.abs(pct).toFixed(1);
+    node.classList.remove("positive", "negative", "neutral");
+    node.classList.add(metric.direction || "neutral");
+    node.innerText = `${prefix} ${rounded}% vs previous period`;
+  }
+
+  function humanizeDashboardLabel(value){
+    const text = String(value || "").replace(/_/g, " ").trim();
+    return text ? text.replace(/\b\w/g, char => char.toUpperCase()) : "Other";
+  }
+
+  function renderDashboardCountryChart(items){
+    if(!salesCountryChart) return;
+
+    const rows = Array.isArray(items) ? items : [];
+    const max = Math.max(...rows.map(item => Number(item.units_sold || 0)), 1);
+    const colors = ["#6d3df4", "#3b82f6", "#10b981", "#f97316", "#ef4444", "#8b5cf6"];
+
+    salesCountryChart.innerHTML = rows.length
+      ? rows.map((item, idx) => {
+          const value = Number(item.units_sold || 0);
+          const height = Math.max((value / max) * 100, 4);
+          return `
+            <div class="country-bar">
+              <div class="country-bar-track">
+                <i style="height:${height}%; background: linear-gradient(180deg, ${colors[idx % colors.length]}, ${colors[(idx + 1) % colors.length]});"></i>
+              </div>
+              <span>${escapeHtml(humanizeDashboardLabel(item.country_code))}</span>
+              <b>${formatDashboardNumber(value)}</b>
+            </div>
+          `;
+        }).join("")
+      : `<div style="padding: 10px 0;color:#6b7280;">No country data available.</div>`;
+  }
+
+  function renderDashboardTimeSeries(items){
+    if(!royaltiesOverTimeChart) return;
+
+    const rows = Array.isArray(items) ? items : [];
+    if(rows.length === 0){
+      return;
+    }
+
+    const values = rows.map(item => Number(item.earnings || 0));
+    const maxValue = Math.max(...values, 1);
+    const points = rows.map((item, idx) => {
+      const x = 28 + (idx * (568 / Math.max(rows.length - 1, 1)));
+      const y = 204 - ((Number(item.earnings || 0) / maxValue) * 144);
+      return { x, y, label: item.period };
+    });
+
+    const linePath = points.map((point, idx) => `${idx === 0 ? "M" : "L"}${point.x.toFixed(1)} ${point.y.toFixed(1)}`).join(" ");
+    const areaPath = `${linePath} L${points[points.length - 1].x.toFixed(1)} 218 L28 218 Z`;
+    const labels = rows.map((item, idx) => {
+      if(rows.length <= 5) return `<span>${escapeHtml(formatDashboardPeriodLabel(item.period))}</span>`;
+      if(idx % Math.ceil(rows.length / 5) !== 0 && idx !== rows.length - 1) return "";
+      return `<span>${escapeHtml(formatDashboardPeriodLabel(item.period))}</span>`;
+    }).filter(Boolean).join("");
+
+    royaltiesOverTimeChart.innerHTML = `
+      <div class="chart-tooltip">${escapeHtml(formatDashboardPeriodLabel(rows[rows.length - 1].period))}<br><strong>${formatDashboardCurrency(rows[rows.length - 1].earnings)}</strong></div>
+      <svg viewBox="0 0 620 260" role="img" aria-label="Royalties over time chart">
+        <defs>
+          <linearGradient id="royaltyArea" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#6d3df4" stop-opacity=".26"/>
+            <stop offset="100%" stop-color="#6d3df4" stop-opacity="0"/>
+          </linearGradient>
+        </defs>
+        <g class="grid-lines">
+          <line x1="28" x2="596" y1="34" y2="34"/>
+          <line x1="28" x2="596" y1="90" y2="90"/>
+          <line x1="28" x2="596" y1="146" y2="146"/>
+          <line x1="28" x2="596" y1="202" y2="202"/>
+        </g>
+        <path class="area" d="${areaPath}"/>
+        <path class="line" d="${linePath}"/>
+        ${points.map(point => `<circle cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="6"></circle>`).join("")}
+      </svg>
+      <div class="chart-axis">${labels}</div>
+    `;
+  }
+
+  function formatDashboardPeriodLabel(value){
+    if(!value) return "";
+    const date = new Date(value);
+    if(Number.isNaN(date.getTime())) return String(value);
+    return date.toLocaleDateString(undefined, { month: "short", year: "numeric" });
+  }
+
+  function renderDashboardFormatChart(items){
+    if(!royaltiesByFormatPanel) return;
+
+    const rows = Array.isArray(items) ? items : [];
+    const total = rows.reduce((sum, item) => sum + Number(item.earnings || 0), 0);
+    const colors = ["#6d3df4", "#3b82f6", "#10b981", "#f97316", "#ef4444", "#8b5cf6"];
+
+    if(rows.length === 0 || total <= 0){
+      return;
+    }
+
+    let offset = 0;
+    const segments = rows.map((item, idx) => {
+      const pct = (Number(item.earnings || 0) / total) * 100;
+      const start = offset;
+      offset += pct;
+      return `${colors[idx % colors.length]} ${start}% ${offset}%`;
+    }).join(", ");
+
+    const legend = rows.map((item, idx) => {
+      const pct = ((Number(item.earnings || 0) / total) * 100).toFixed(1);
+      return `
+        <div>
+          <span class="dot" style="background:${colors[idx % colors.length]};"></span>
+          <strong>${escapeHtml(humanizeDashboardLabel(item.royalty_type))}</strong>
+          <em>${pct}%</em>
+          <b>${formatDashboardCurrency(item.earnings)}</b>
+        </div>
+      `;
+    }).join("");
+
+    const totalText = formatDashboardCurrency(total);
+    royaltiesByFormatPanel.innerHTML = `
+      <div class="dashboard-panel-header">
+        <h2>Royalties by Format</h2>
+      </div>
+      <div class="donut-row">
+        <div class="donut-chart" style="background: conic-gradient(${segments});"><span>${totalText}<small>Total</small></span></div>
+        <div class="donut-legend">${legend}</div>
+      </div>
+      <a class="dashboard-link" href="#">View full breakdown →</a>
+    `;
+  }
+
+  function applyDashboardSummary(summary){
+    if(!summary) return;
+
+    dashboardSummary = summary;
+    const cards = summary.cards || {};
+    const rangeLabel = summary.range && summary.range.label ? summary.range.label : "Selected range";
+    const previousLabel = `vs ${rangeLabel}`;
+
+    if(dashboardTotalRoyalties){
+      dashboardTotalRoyalties.innerText = formatDashboardCurrency(cards.total_royalties && cards.total_royalties.value);
+      setDashboardDelta(dashboardTotalRoyaltiesDelta, cards.total_royalties);
+    }
+
+    if(dashboardTotalUnitsSold){
+      dashboardTotalUnitsSold.innerText = formatDashboardNumber(cards.total_units_sold && cards.total_units_sold.value);
+      setDashboardDelta(dashboardTotalUnitsSoldDelta, cards.total_units_sold);
+    }
+
+    if(dashboardTotalTitlesSold){
+      dashboardTotalTitlesSold.innerText = formatDashboardNumber(cards.total_titles_sold && cards.total_titles_sold.value);
+      setDashboardDelta(dashboardTotalTitlesSoldDelta, cards.total_titles_sold);
+    }
+
+    if(dashboardAverageRoyaltyPerUnit){
+      dashboardAverageRoyaltyPerUnit.innerText = formatDashboardCurrency(cards.average_royalty_per_unit && cards.average_royalty_per_unit.value);
+      setDashboardDelta(dashboardAverageRoyaltyPerUnitDelta, cards.average_royalty_per_unit);
+    }
+
+    if(dashboardRangeSelect && summary.range && summary.range.key){
+      dashboardRangeSelect.value = summary.range.key;
+    }
+
+    toggleCustomDashboardRange();
+
+    const charts = summary.charts || {};
+    renderDashboardCountryChart(charts.sales_by_country || []);
+    renderDashboardTimeSeries(charts.royalties_over_time || []);
+    renderDashboardFormatChart(charts.royalties_by_format || []);
+  }
+
+  async function loadDashboardSummary(){
+    if(!currentUser || !dashboardRangeSelect) return;
+
+    const range = dashboardRangeSelect.value || "5m";
+    const params = new URLSearchParams();
+    params.set("range", range);
+
+    if(range === "custom"){
+      if(!dashboardCustomFrom || !dashboardCustomTo || !dashboardCustomFrom.value || !dashboardCustomTo.value){
+        return;
+      }
+
+      params.set("from", dashboardCustomFrom.value);
+      params.set("to", dashboardCustomTo.value);
+    }
+
+    const res = await fetch(`/api/dashboard/summary?${params.toString()}`);
+
+    if(!res.ok){
+      return;
+    }
+
+    const payload = await res.json();
+    applyDashboardSummary(payload.results || null);
+  }
+
+  function toggleCustomDashboardRange(){
+    if(!dashboardRangeSelect || !dashboardCustomRange) return;
+    dashboardCustomRange.classList.toggle("hidden", dashboardRangeSelect.value !== "custom");
+  }
+
   async function loadReportingMonths(){
     const select = document.getElementById("filter_report_month");
     if(!select || !currentUser) return;
@@ -1047,6 +1296,29 @@
   const applyFiltersBtn = document.getElementById("applyFiltersBtn");
   if(applyFiltersBtn){
     applyFiltersBtn.addEventListener("click", () => loadReportingData(1));
+  }
+
+  if(dashboardRangeSelect){
+    dashboardRangeSelect.addEventListener("change", () => {
+      toggleCustomDashboardRange();
+      loadDashboardSummary();
+    });
+  }
+
+  if(dashboardCustomFrom){
+    dashboardCustomFrom.addEventListener("change", () => {
+      if(dashboardRangeSelect && dashboardRangeSelect.value === "custom"){
+        loadDashboardSummary();
+      }
+    });
+  }
+
+  if(dashboardCustomTo){
+    dashboardCustomTo.addEventListener("change", () => {
+      if(dashboardRangeSelect && dashboardRangeSelect.value === "custom"){
+        loadDashboardSummary();
+      }
+    });
   }
 
   const clearFiltersBtn = document.getElementById("clearFiltersBtn");

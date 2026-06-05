@@ -10,6 +10,10 @@ try:
     from .llm_service import route_user_query
 except ImportError:
     from llm_service import route_user_query
+try:
+    from .dashboard_calculations import get_dashboard_summary, DASHBOARD_RANGES, DEFAULT_RANGE_KEY
+except ImportError:
+    from dashboard_calculations import get_dashboard_summary, DASHBOARD_RANGES, DEFAULT_RANGE_KEY
 
 from authlib.integrations.flask_client import OAuth
 
@@ -172,6 +176,29 @@ def reporting_page():
 @login_required
 def dashboard_page():
     return render_template("react_one_pager.html")
+
+
+@app.route("/api/dashboard/summary", methods=["GET"])
+@login_required
+def dashboard_summary_api():
+    range_key = request.args.get("range", DEFAULT_RANGE_KEY)
+    custom_from = request.args.get("from")
+    custom_to = request.args.get("to")
+    return jsonify({
+        "status": "ok",
+        "results": get_dashboard_summary(
+            conn=conn,
+            user_id=session["user_id"],
+            range_key=range_key,
+            base_currency=royalty_db_service.get_user_base_currency(conn, session["user_id"]),
+            custom_from=custom_from,
+            custom_to=custom_to
+        ),
+        "available_ranges": [
+            {"key": value.key, "label": value.label}
+            for value in DASHBOARD_RANGES.values()
+        ],
+    })
 
 
 @app.route("/ai-assistance")

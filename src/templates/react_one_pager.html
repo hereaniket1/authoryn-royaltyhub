@@ -19,6 +19,7 @@
 
       <nav class="dashboard-nav" aria-label="Primary navigation">
         <a href="/" class="dashboard-nav-item"><span>⌂</span> Home</a>
+        <a href="/dashboard" id="dashboardLink" class="dashboard-nav-item hidden"><span>▤</span> Dashboard</a>
         <a href="/reporting" id="reportingLink" class="dashboard-nav-item hidden"><span>▤</span> Reporting</a>
         <a href="/ai-assistance" id="aiAssistanceLink" class="dashboard-nav-item"><span>✦</span> AI Assistance <b>New</b></a>
         <a href="/settings" id="settingsLink" class="dashboard-nav-item"><span>⚙</span> Settings</a>
@@ -285,7 +286,28 @@
               <p>Track your royalties and sales performance</p>
             </div>
             <div class="dashboard-actions">
-              <button type="button" class="dashboard-date-btn">May 1 - May 31, 2024 <span>▣</span></button>
+              <label class="dashboard-range-wrap" for="dashboardRangeSelect">
+                <span class="sr-only">Select data range</span>
+                <select id="dashboardRangeSelect" class="dashboard-date-btn">
+                  <option value="7d">Last 7 days</option>
+                  <option value="30d">Last 30 days</option>
+                  <option value="3m">Last 3 months</option>
+                  <option value="5m" selected>Last 5 months</option>
+                  <option value="12m">Last 12 months</option>
+                  <option value="5y">Last 5 years</option>
+                  <option value="custom">Custom</option>
+                </select>
+              </label>
+              <div id="dashboardCustomRange" class="dashboard-custom-range hidden">
+                <label class="dashboard-custom-field">
+                  <span>From</span>
+                  <input id="dashboardCustomFrom" type="date">
+                </label>
+                <label class="dashboard-custom-field">
+                  <span>To</span>
+                  <input id="dashboardCustomTo" type="date">
+                </label>
+              </div>
               <button type="button" class="dashboard-filter-btn">≡ Filters</button>
               <button type="button" class="dashboard-export-btn">Export ⌄</button>
             </div>
@@ -295,38 +317,47 @@
             <article class="dashboard-kpi-card">
               <div>
                 <span>Total Royalties</span>
-                <strong>$52,347.89</strong>
-                <small class="positive">↑ 14.2% vs Apr 1 - Apr 30</small>
+                <strong id="dashboardTotalRoyalties">$0.00</strong>
+                <small id="dashboardTotalRoyaltiesDelta" class="neutral">— vs previous period</small>
               </div>
               <i class="purple">$</i>
             </article>
             <article class="dashboard-kpi-card">
               <div>
                 <span>Total Units Sold</span>
-                <strong>18,392</strong>
-                <small class="positive">↑ 8.7% vs Apr 1 - Apr 30</small>
+                <strong id="dashboardTotalUnitsSold">0</strong>
+                <small id="dashboardTotalUnitsSoldDelta" class="neutral">— vs previous period</small>
               </div>
               <i class="blue">▰</i>
             </article>
             <article class="dashboard-kpi-card">
               <div>
                 <span>Total Titles Sold</span>
-                <strong>24</strong>
-                <small class="neutral">— vs Apr 1 - Apr 30</small>
+                <strong id="dashboardTotalTitlesSold">0</strong>
+                <small id="dashboardTotalTitlesSoldDelta" class="neutral">— vs previous period</small>
               </div>
               <i class="orange">▥</i>
             </article>
             <article class="dashboard-kpi-card">
               <div>
                 <span>Average Royalty / Unit</span>
-                <strong>$2.85</strong>
-                <small class="positive">↑ 5.1% vs Apr 1 - Apr 30</small>
+                <strong id="dashboardAverageRoyaltyPerUnit">$0.00</strong>
+                <small id="dashboardAverageRoyaltyPerUnitDelta" class="neutral">— vs previous period</small>
               </div>
               <i class="green">⌁</i>
             </article>
           </div>
 
-          <div class="dashboard-grid">
+          <div class="dashboard-grid dashboard-grid-feature">
+            <section class="dashboard-panel sales-country-panel">
+              <div class="dashboard-panel-header">
+                <h2>Sales by Country</h2>
+              </div>
+              <div class="country-chart">
+                <div class="country-viz"></div>
+              </div>
+            </section>
+
             <section class="dashboard-panel chart-panel">
               <div class="dashboard-panel-header">
                 <h2>Royalties Over Time</h2>
@@ -374,7 +405,9 @@
               </div>
               <a class="dashboard-link" href="#">View full breakdown →</a>
             </section>
+          </div>
 
+          <div class="dashboard-grid dashboard-grid-tertiary">
             <aside class="dashboard-panel insights-panel">
               <div class="dashboard-panel-header">
                 <h2>AI Insights <span>Beta</span></h2>
