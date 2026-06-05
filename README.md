@@ -2,7 +2,7 @@
 
 The Royalty Hub is a Flask web app for ingesting author royalty spreadsheets, storing normalized royalty transactions in PostgreSQL, and reviewing user-scoped royalty data through a single-page interface.
 
-The active data model is `setup/royalty_ai_schema_acx_ready.sql`. It supports both KDP royalty statements and ACX/Audible royalty feeds.
+The active data model is `setup/royalty_schema_master.sql`. It supports both KDP royalty statements and ACX/Audible royalty feeds.
 
 ## Features
 
@@ -25,9 +25,8 @@ The active data model is `setup/royalty_ai_schema_acx_ready.sql`. It supports bo
 ├── README.md
 ├── requirements.txt
 ├── setup/
-│   ├── royalty_ai_schema.sql
-│   ├── royalty_ai_schema_acx_ready.sql
-│   └── royalty_clean_statement_acx_full.sql
+│   └── royalty_schema_master.sql
+│   └── royalty_clean_statement_master.sql
 └── src/
     ├── app.py
     ├── royalty_db_service.py
@@ -64,7 +63,7 @@ pip install -r requirements.txt
 Use the ACX-ready schema for new local databases:
 
 ```bash
-psql -f setup/royalty_ai_schema_acx_ready.sql
+psql -f setup/royalty_schema_master.sql
 ```
 
 This creates:

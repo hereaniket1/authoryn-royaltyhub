@@ -1,8 +1,10 @@
 import os
 import re
+from datetime import date, datetime
 
 import pandas as pd
 import psycopg2
+import requests
 from psycopg2.extras import Json, RealDictCursor, execute_values
 
 
@@ -11,6 +13,32 @@ ACX_NET_SALES_SHEET = "Sales Detail (Net Sales)"
 KDP_TOTAL_EARNINGS_SHEET = "Total Earnings"
 
 SUPPORTED_SOURCE_PLATFORMS = {"KDP", "ACX"}
+FRANKFURTER_API_URL = "https://api.frankfurter.dev/v2/rates"
+FX_BASE_CURRENCY = "USD"
+FX_QUOTES = ["EUR", "INR", "USD", "GBP", "CAD", "AUD", "JPY"]
+
+CURRENCY_TO_COUNTRY = {
+    "USD": "US",
+    "GBP": "GB",
+    "EUR": "EU",
+    "INR": "IN",
+    "CAD": "CA",
+    "AUD": "AU",
+    "JPY": "JP",
+}
+
+LOCALE_TO_CURRENCY = {
+    "en-us": "USD",
+    "en-gb": "GBP",
+    "en-ca": "CAD",
+    "en-au": "AUD",
+    "en-in": "INR",
+    "ja-jp": "JPY",
+    "fr-fr": "EUR",
+    "de-de": "EUR",
+    "it-it": "EUR",
+    "es-es": "EUR",
+}
 
 REPORTING_COLUMNS = [
     "id",
@@ -75,6 +103,231 @@ def create_connection():
         user=os.getenv("DB_USER"),
         password=os.getenv("DB_PASSWORD")
     )
+
+
+def ensure_fx_schema(conn):
+    statements = [
+        """
+        ALTER TABLE IF EXISTS app_users
+        ADD COLUMN IF NOT EXISTS base_currency CHAR(3) DEFAULT 'USD'
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS currency_rates (
+            id BIGSERIAL PRIMARY KEY,
+            rate_month DATE NOT NULL,
+            base_currency CHAR(3) NOT NULL,
+            quote_currency CHAR(3) NOT NULL,
+            fx_rate NUMERIC(18,8) NOT NULL,
+            source TEXT DEFAULT 'frankfurter',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE (rate_month, base_currency, quote_currency)
+        )
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS idx_currency_rates_month_base
+            ON currency_rates(rate_month, base_currency)
+        """,
+    ]
+
+    with conn.cursor() as cursor:
+        for statement in statements:
+            cursor.execute(statement)
+
+    conn.commit()
+
+
+def infer_base_currency_from_user_info(user_info):
+    locale = clean_text(user_info.get("locale") or user_info.get("language"))
+    if locale:
+        normalized = locale.replace("_", "-").lower()
+        if normalized in LOCALE_TO_CURRENCY:
+            return LOCALE_TO_CURRENCY[normalized]
+        if "-" in normalized:
+            country_part = normalized.split("-", 1)[1].upper()
+            if country_part in CURRENCY_TO_COUNTRY.values():
+                return {
+                    "US": "USD",
+                    "GB": "GBP",
+                    "CA": "CAD",
+                    "AU": "AUD",
+                    "IN": "INR",
+                    "JP": "JPY",
+                    "FR": "EUR",
+                    "DE": "EUR",
+                    "IT": "EUR",
+                    "ES": "EUR",
+                }.get(country_part, "USD")
+
+    return "USD"
+
+
+def month_key_from_report_month(report_month):
+    if isinstance(report_month, date):
+        return report_month.strftime("%Y-%m-01")
+
+    text = clean_text(report_month)
+    if not text:
+        return None
+
+    parsed = pd.to_datetime(text, errors="coerce")
+    if pd.notna(parsed):
+        return parsed.strftime("%Y-%m-01")
+
+    return None
+
+
+def fetch_monthly_currency_rates(rate_month):
+    month_key = month_key_from_report_month(rate_month)
+    if not month_key:
+        raise ValueError("Invalid report month for FX lookup")
+
+    response = requests.get(
+        FRANKFURTER_API_URL,
+        params={
+            "from": month_key,
+            "to": month_key,
+            "quotes": ",".join(FX_QUOTES),
+            "base": FX_BASE_CURRENCY,
+            "group": "month",
+        },
+        timeout=30,
+    )
+    response.raise_for_status()
+    payload = response.json()
+
+    rates = {}
+    for row in payload:
+        quote = str(row.get("quote") or "").upper()
+        rate = row.get("rate")
+        if quote and rate is not None:
+            rates[quote] = float(rate)
+
+    return rates
+
+
+def ensure_currency_rates_cached(conn, rate_month):
+    month_key = month_key_from_report_month(rate_month)
+    if not month_key:
+        raise ValueError("Invalid report month for FX cache")
+
+    with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+        cursor.execute(
+            """
+            SELECT quote_currency, fx_rate
+            FROM currency_rates
+            WHERE rate_month = %s
+              AND base_currency = %s
+            """,
+            (month_key, FX_BASE_CURRENCY)
+        )
+        cached_rows = cursor.fetchall()
+
+    cached = {
+        row["quote_currency"]: float(row["fx_rate"])
+        for row in cached_rows
+    }
+
+    missing_quotes = [quote for quote in FX_QUOTES if quote not in cached]
+    if not missing_quotes:
+        return cached
+
+    fresh_rates = fetch_monthly_currency_rates(month_key)
+    with conn.cursor() as cursor:
+        for quote in FX_QUOTES:
+            rate = fresh_rates.get(quote)
+            if rate is None:
+                continue
+
+            cursor.execute(
+                """
+                INSERT INTO currency_rates (
+                    rate_month,
+                    base_currency,
+                    quote_currency,
+                    fx_rate,
+                    source
+                )
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (rate_month, base_currency, quote_currency)
+                DO UPDATE SET
+                    fx_rate = EXCLUDED.fx_rate,
+                    source = EXCLUDED.source,
+                    updated_at = NOW()
+                """,
+                (month_key, FX_BASE_CURRENCY, quote, rate, "frankfurter")
+            )
+
+    conn.commit()
+    cached.update(fresh_rates)
+    return cached
+
+
+def convert_currency_amount(amount, source_currency, target_currency, monthly_rates):
+    if amount is None:
+        return None
+
+    source_currency = clean_text(source_currency)
+    target_currency = clean_text(target_currency)
+
+    if not source_currency or not target_currency:
+        return None
+
+    source_currency = source_currency.upper()
+    target_currency = target_currency.upper()
+
+    if source_currency == target_currency:
+        return float(amount)
+
+    source_to_usd = monthly_rates.get(source_currency)
+    target_to_usd = monthly_rates.get(target_currency)
+
+    if source_currency != FX_BASE_CURRENCY and not source_to_usd:
+        return None
+
+    if target_currency != FX_BASE_CURRENCY and not target_to_usd:
+        return None
+
+    amount_in_usd = float(amount)
+    if source_currency != FX_BASE_CURRENCY:
+        amount_in_usd = amount_in_usd / float(source_to_usd)
+
+    if target_currency == FX_BASE_CURRENCY:
+        return amount_in_usd
+
+    return amount_in_usd * float(target_to_usd)
+
+
+def ensure_user_base_currency(conn, user_id, base_currency):
+    with conn.cursor() as cursor:
+        cursor.execute(
+            """
+            UPDATE app_users
+            SET base_currency = %s,
+                updated_at = NOW()
+            WHERE id = %s
+            """,
+            (base_currency, user_id)
+        )
+    conn.commit()
+
+
+def get_user_base_currency(conn, user_id):
+    with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+        cursor.execute(
+            """
+            SELECT COALESCE(base_currency, 'USD') AS base_currency
+            FROM app_users
+            WHERE id = %s
+            """,
+            (user_id,)
+        )
+        row = cursor.fetchone()
+
+    if not row:
+        return "USD"
+
+    return clean_text(row.get("base_currency")) or "USD"
 
 
 def clean_text(value):
@@ -269,6 +522,7 @@ def extract_kdp_report_month(excel_file):
 
 
 def upsert_google_user(conn, user_info):
+    base_currency = infer_base_currency_from_user_info(user_info)
     with conn.cursor(cursor_factory=RealDictCursor) as cursor:
         cursor.execute(
             """
@@ -278,15 +532,17 @@ def upsert_google_user(conn, user_info):
                 avatar_url,
                 google_sub,
                 email_verified,
+                base_currency,
                 last_login_at
             )
-            VALUES (%s, %s, %s, %s, %s, NOW())
+            VALUES (%s, %s, %s, %s, %s, %s, NOW())
             ON CONFLICT (google_sub)
             DO UPDATE SET
                 email = EXCLUDED.email,
                 full_name = EXCLUDED.full_name,
                 avatar_url = EXCLUDED.avatar_url,
                 email_verified = EXCLUDED.email_verified,
+                base_currency = COALESCE(app_users.base_currency, EXCLUDED.base_currency),
                 last_login_at = NOW(),
                 updated_at = NOW()
             RETURNING id, email, full_name, avatar_url
@@ -297,6 +553,7 @@ def upsert_google_user(conn, user_info):
                 user_info.get("picture"),
                 user_info.get("sub"),
                 user_info.get("email_verified", False),
+                base_currency,
             )
         )
 
@@ -550,6 +807,10 @@ def insert_acx_net_sales_excel(conn, excel_file, user_id, report_month=None):
         engine="openpyxl"
     )
 
+    ensure_fx_schema(conn)
+    monthly_rates = ensure_currency_rates_cached(conn, final_report_month)
+    user_base_currency = get_user_base_currency(conn, user_id)
+
     missing_columns = [column for column in column_map if column not in df.columns]
     if missing_columns:
         raise ValueError(
@@ -574,6 +835,20 @@ def insert_acx_net_sales_excel(conn, excel_file, user_id, report_month=None):
         units_refunded = abs(int(net_units)) if net_units < 0 or str(transaction_type).lower() == "return" else 0
         currency = clean_text(row.get("currency"))
         earnings = clean_number(row.get("earnings"))
+        earnings_in_base_currency = convert_currency_amount(
+            earnings,
+            currency,
+            user_base_currency,
+            monthly_rates
+        )
+        fx_rate = None
+        if currency and user_base_currency and currency.upper() != user_base_currency.upper():
+            source_rate = monthly_rates.get(currency.upper())
+            target_rate = monthly_rates.get(user_base_currency.upper())
+            if source_rate and target_rate:
+                fx_rate = float(target_rate) / float(source_rate)
+        elif currency:
+            fx_rate = 1.0
 
         rows.append((
             user_id,
@@ -592,11 +867,11 @@ def insert_acx_net_sales_excel(conn, excel_file, user_id, report_month=None):
             clean_text(row.get("purchase_type")),
             currency,
             earnings,
-            currency,
-            earnings,
-            1.0000 if currency else None,
+            user_base_currency,
+            earnings_in_base_currency,
+            fx_rate,
             Json(dataframe_raw_row(row)),
-            1.0000,
+            1.0000 if earnings_in_base_currency is not None else None,
             "MAPPED",
             clean_text(row.get("product_id")),
             clean_text(row.get("provider_product_id")),
@@ -711,6 +986,10 @@ def insert_total_earnings_excel(conn, excel_file, user_id, report_month=None):
         engine="openpyxl"
     )
 
+    ensure_fx_schema(conn)
+    monthly_rates = ensure_currency_rates_cached(conn, final_report_month)
+    user_base_currency = get_user_base_currency(conn, user_id)
+
     df = df[list(column_map.keys())]
     df = df.rename(columns=column_map)
 
@@ -725,6 +1004,20 @@ def insert_total_earnings_excel(conn, excel_file, user_id, report_month=None):
         raw_row = dataframe_raw_row(row)
         currency = clean_text(row.get("currency"))
         earnings = clean_number(row.get("earnings"))
+        earnings_in_base_currency = convert_currency_amount(
+            earnings,
+            currency,
+            user_base_currency,
+            monthly_rates
+        )
+        fx_rate = None
+        if currency and user_base_currency and currency.upper() != user_base_currency.upper():
+            source_rate = monthly_rates.get(currency.upper())
+            target_rate = monthly_rates.get(user_base_currency.upper())
+            if source_rate and target_rate:
+                fx_rate = float(target_rate) / float(source_rate)
+        elif currency:
+            fx_rate = 1.0
 
         rows.append((
             user_id,
@@ -747,11 +1040,11 @@ def insert_total_earnings_excel(conn, excel_file, user_id, report_month=None):
             clean_number(row.get("avg_file_size_mb")),
             clean_number(row.get("avg_delivery_manufacturing_cost")),
             earnings,
-            currency,
-            earnings,
-            1.0000 if currency else None,
+            user_base_currency,
+            earnings_in_base_currency,
+            fx_rate,
             Json(raw_row),
-            1.0000,
+            1.0000 if earnings_in_base_currency is not None else None,
             "MAPPED",
         ))
 

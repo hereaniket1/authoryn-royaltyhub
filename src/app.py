@@ -36,6 +36,12 @@ except Exception as error:
     print("DB Connected wrong!", error)
     conn = None
 
+if conn:
+    try:
+        royalty_db_service.ensure_fx_schema(conn)
+    except Exception as error:
+        print("FX schema init failed:", error)
+
 UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 

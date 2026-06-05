@@ -1,6 +1,6 @@
 -- ===============================================================
--- Athoryn Royalty Platform - Full Clean Statement
--- Generated from latest ACX-ready schema
+-- Authoryn Royalty Hub - Full Clean Statement
+-- Generated from the master schema
 -- WARNING: This removes schema objects and data.
 -- ===============================================================
 
@@ -36,6 +36,7 @@ DROP INDEX IF EXISTS idx_royalty_user_id;
 DROP INDEX IF EXISTS idx_royalty_user_report_month;
 
 -- Drop tables in dependency-safe order
+DROP TABLE IF EXISTS currency_rates CASCADE;
 DROP TABLE IF EXISTS royalty_transactions CASCADE;
 DROP TABLE IF EXISTS app_users CASCADE;
 
