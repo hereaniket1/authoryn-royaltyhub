@@ -1,5 +1,6 @@
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for
 import os
+import tempfile
 from functools import wraps
 
 try:
@@ -50,14 +51,42 @@ if conn:
         except Exception:
             pass
 
-UPLOAD_FOLDER = "uploads"
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+def _allowed_upload_filename(filename):
+    return bool(filename) and filename.lower().endswith(".xlsx")
+
+
+def _process_uploaded_file_storage(file_storage, user_id):
+    if not file_storage or not file_storage.filename:
+        raise ValueError("Empty filename")
+
+    if not _allowed_upload_filename(file_storage.filename):
+        raise ValueError("Unsupported file type. Please upload a .xlsx Excel file.")
+
+    temp_suffix = os.path.splitext(file_storage.filename)[1] or ".xlsx"
+    temp_path = None
+
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=temp_suffix) as temp_file:
+            temp_path = temp_file.name
+            file_storage.save(temp_path)
+
+        return royalty_db_service.insert_royalty_excel(
+            conn=conn,
+            excel_file=temp_path,
+            user_id=user_id
+        )
+    finally:
+        if temp_path and os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except Exception:
+                pass
 
 def login_required(view_func):
     @wraps(view_func)
     def wrapper(*args, **kwargs):
         if "user_id" not in session:
-            if request.path.startswith("/api/") or request.path in {"/post-query", "/upload"}:
+            if request.path.startswith("/api/") or request.path in {"/post-query", "/upload"} or request.path.startswith("/upload/"):
                 return jsonify({"error": "LOGIN_REQUIRED"}), 401
             return redirect(url_for("index"))
         return view_func(*args, **kwargs)
@@ -319,25 +348,55 @@ def delete_my_data_api():
 @app.route("/upload", methods=["POST"])
 @login_required
 def upload():
-
     if "file" not in request.files:
         return jsonify({"error": "No file uploaded"}), 400
 
-    file = request.files["file"]
+    try:
+        data = _process_uploaded_file_storage(request.files["file"], session["user_id"])
+        return jsonify({"status": "ok", "results": data})
+    except Exception as error:
+        return jsonify({"error": str(error)}), 400
 
-    if file.filename == "":
-        return jsonify({"error": "Empty filename"}), 400
 
-    save_path = os.path.join(UPLOAD_FOLDER, file.filename)
-    file.save(save_path)
+@app.route("/upload/bulk", methods=["POST"])
+@login_required
+def bulk_upload():
+    files = request.files.getlist("files")
 
-    data = royalty_db_service.insert_royalty_excel(
-        conn=conn,
-        excel_file=save_path,
-        user_id=session["user_id"]
-    )
+    if not files:
+        return jsonify({"error": "No files uploaded"}), 400
 
-    return jsonify({"status": "ok", "results": data})
+    results = []
+
+    for file_storage in files:
+        file_name = file_storage.filename if file_storage else ""
+        if not _allowed_upload_filename(file_name):
+            results.append({
+                "file_name": file_name,
+                "status": "ERROR",
+                "error": "Unsupported file type. Please upload .xlsx files only."
+            })
+            continue
+
+        try:
+            data = _process_uploaded_file_storage(file_storage, session["user_id"])
+            file_status = data.get("status", "ok") if isinstance(data, dict) else "ok"
+            results.append({
+                "file_name": file_name,
+                "status": file_status,
+                "results": data
+            })
+        except Exception as error:
+            results.append({
+                "file_name": file_name,
+                "status": "ERROR",
+                "error": str(error)
+            })
+
+    return jsonify({
+        "status": "ok",
+        "results": results
+    })
 
 
 if __name__ == "__main__":

@@ -966,6 +966,81 @@
       gap: 12px;
     }
 
+    .settings-result-summary {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .settings-result-summary-title {
+      font-size: 15px;
+      font-weight: 800;
+      color: #111827;
+    }
+
+    .settings-result-summary-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 14px;
+      color: #6b7280;
+      font-size: 13px;
+      font-weight: 650;
+    }
+
+    .settings-result-summary-meta span {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 10px;
+      border-radius: 999px;
+      background: #f8fafc;
+      border: 1px solid #e5e7eb;
+    }
+
+    .settings-result-group {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding-top: 2px;
+    }
+
+    .settings-result-group-title {
+      font-size: 13px;
+      font-weight: 800;
+      color: #374151;
+      text-transform: uppercase;
+      letter-spacing: .03em;
+    }
+
+    .settings-result-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .settings-result-list li {
+      display: grid;
+      gap: 2px;
+      padding: 10px 12px;
+      border: 1px solid #e5e7eb;
+      border-radius: 10px;
+      background: #fff;
+    }
+
+    .settings-result-list strong {
+      font-size: 14px;
+      color: #111827;
+    }
+
+    .settings-result-list span {
+      font-size: 13px;
+      color: #6b7280;
+      white-space: pre-wrap;
+    }
+
     .analytics-charts {
       display: grid;
       grid-template-columns: minmax(0, 1.3fr) minmax(320px, .9fr);
@@ -1396,6 +1471,19 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
+    }
+
+    .dashboard-bulk-upload-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      min-width: 150px;
+    }
+
+    .bulk-upload-icon {
+      font-size: 15px;
+      line-height: 1;
     }
 
     select.dashboard-date-btn {

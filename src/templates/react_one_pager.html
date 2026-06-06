@@ -111,6 +111,7 @@
             <button id="removeFileBtn" class="file-remove" type="button">×</button>
           </div>
           <input id="fileInput" class="hidden" type="file" accept=".xlsx">
+          <input id="settingsBulkFileInput" class="hidden" type="file" accept=".xlsx" multiple>
           <button id="attachFileBtn" class="attach-btn" type="button">+</button>
           <textarea id="query" placeholder="Ask AI, or drag an Excel file here. Press Enter to submit. Shift+Enter for new line."></textarea>
           <button id="sendBtn" class="send-btn" type="button">↑</button>
@@ -133,7 +134,7 @@
             <p>Upload statements, manage your source files, and clean up your data when needed.</p>
           </div>
           <div class="dashboard-actions">
-            <button id="settingsUploadBtn" class="dashboard-filter-btn" type="button">Upload Statement</button>
+            <button id="settingsUploadBtn" class="dashboard-filter-btn dashboard-bulk-upload-btn" type="button"><span class="bulk-upload-icon">＋</span><span>Bulk Upload</span></button>
             <button id="deleteAllDataBtn" class="dashboard-export-btn hidden" type="button">Delete All My Data</button>
           </div>
         </header>

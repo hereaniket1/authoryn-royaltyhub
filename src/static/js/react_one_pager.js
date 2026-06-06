@@ -98,6 +98,7 @@
   const settingsLink = document.getElementById("settingsLink");
   const dashboardLink = document.getElementById("dashboardLink");
   const settingsUploadBtn = document.getElementById("settingsUploadBtn");
+  const settingsBulkFileInput = document.getElementById("settingsBulkFileInput");
   const reportingLink = document.getElementById("reportingLink");
   const deleteAllDataBtn = document.getElementById("deleteAllDataBtn");
   const dashboardRangeSelect = document.getElementById("dashboardRangeSelect");
@@ -165,6 +166,65 @@
     pageLoading.classList.toggle("hidden", !active);
     if(pageLoadingText && text){
       pageLoadingText.innerText = text;
+    }
+  }
+
+  function renderSettingsMessage(message, type = "success"){
+    if(!settingsResults) return;
+    const safeMessage = escapeHtml(message || "");
+    settingsResults.innerHTML = `<div class="result-note result-${type === "warning" ? "warning" : "success"}"><pre style="white-space:pre-wrap;margin:0;">${safeMessage}</pre></div>`;
+    if(settingsResultsCard){
+      settingsResultsCard.classList.remove("hidden");
+    }
+  }
+
+  function renderSettingsBulkResult({ processed = 0, inserted = 0, duplicates = [], errors = [] } = {}){
+    if(!settingsResults) return;
+
+    const duplicateMarkup = duplicates.length
+      ? `<div class="settings-result-group">
+          <div class="settings-result-group-title">Already present</div>
+          <ul class="settings-result-list">
+            ${duplicates.map(item => {
+              const month = item.results && item.results.report_month ? item.results.report_month : "unknown month";
+              return `<li><strong>${escapeHtml(item.file_name || "Unnamed file")}</strong><span>${escapeHtml(month)} already exists.</span></li>`;
+            }).join("")}
+          </ul>
+        </div>`
+      : "";
+
+    const errorMarkup = errors.length
+      ? `<div class="settings-result-group">
+          <div class="settings-result-group-title">Errors</div>
+          <ul class="settings-result-list">
+            ${errors.map(item => `<li><strong>${escapeHtml(item.file_name || "Unnamed file")}</strong><span>${escapeHtml(item.error || "Unknown error")}</span></li>`).join("")}
+          </ul>
+        </div>`
+      : "";
+
+    const summaryTone = errors.length ? "warning" : (duplicates.length ? "warning" : "success");
+    const summaryMessage = errors.length
+      ? "Some files could not be uploaded."
+      : (duplicates.length ? "Upload finished, with some files already present." : "All files uploaded successfully.");
+
+    settingsResults.innerHTML = `
+      <div class="result-note result-${summaryTone}">
+        <div class="settings-result-summary">
+          <div class="settings-result-summary-title">${escapeHtml(summaryMessage)}</div>
+          <div class="settings-result-summary-meta">
+            <span>Processed ${processed} file(s)</span>
+            <span>Inserted ${inserted}</span>
+            <span>Already present ${duplicates.length}</span>
+            <span>Errors ${errors.length}</span>
+          </div>
+        </div>
+      </div>
+      ${duplicateMarkup}
+      ${errorMarkup}
+    `;
+
+    if(settingsResultsCard){
+      settingsResultsCard.classList.remove("hidden");
     }
   }
 
@@ -252,7 +312,6 @@
       setPageLoading(true, "Loading reports...");
       reportingPage.classList.add("active");
       if(currentUser){
-        loadReportingMonths();
         loadReportingData(1);
       } else {
         setPageLoading(false);
@@ -663,6 +722,12 @@
   gateLoginBtn.addEventListener("click", () => openLogin(window.location.pathname || "/"));
   gateLoginBtnSettings.addEventListener("click", () => openLogin("/settings"));
   settingsUploadBtn.addEventListener("click", () => {
+    if(settingsBulkFileInput){
+      settingsBulkFileInput.value = "";
+      settingsBulkFileInput.click();
+      return;
+    }
+
     pendingUploadTarget = "settings";
     fileInput.value = "";
     fileInput.click();
@@ -771,61 +836,174 @@
     const formData = new FormData();
     formData.append("file", file);
 
+    if(target === settingsResults){
+      setPageLoading(true, "Uploading statement...");
+      if(settingsResultsCard){
+        settingsResultsCard.classList.remove("hidden");
+      }
+      target.innerHTML = `<div class="result-note">Uploading ${escapeHtml(file.name)}...</div>`;
+    }
+
     if(options.target !== "settings"){
       addMessage("Uploading file: " + file.name, "user");
     }
 
-    const res = await fetch("/upload", {
-      method: "POST",
-      body: formData
+    try {
+      const res = await fetch("/upload", {
+        method: "POST",
+        body: formData
+      });
+
+      if(res.status === 401){
+        openLogin("/");
+        throw new Error("Please login first, then upload again.");
+      }
+
+      if(!res.ok){
+        const errorText = await res.text().catch(() => "");
+        throw new Error(errorText || "File upload failed");
+      }
+
+      const payload = await res.json();
+      const data = getUploadData(payload);
+
+      if(data && data.status === "ALREADY_EXISTS"){
+        appendResultTarget(target, {
+          message: data.message || `Data already exists for report_month ${data.report_month}. Insert skipped.`,
+          type: "warning",
+          records: data.sample_records || [],
+          title: `Sample records for ${data.report_month}`,
+          meta: `${data.existing_record_count || 0} existing records`
+        }, false);
+        if(target === settingsResults && isReportingRoute()){
+          loadReportingMonths().catch(() => {});
+        }
+        return payload;
+      }
+
+      if(data && data.status === "INSERTED"){
+        appendResultTarget(target, {
+          message: `Data uploaded for ${data.report_month}. Inserted rows: ${data.inserted_rows}.`,
+          type: "success"
+        }, false);
+        if(target === settingsResults && isReportingRoute()){
+          loadReportingMonths().catch(() => {});
+        }
+        return payload;
+      }
+
+      appendResultTarget(target, {
+        message: "Upload completed.",
+        type: "success",
+        records: data && data.sample_records ? data.sample_records : null,
+        title: "Sample records"
+      }, false);
+
+      if(target === settingsResults && isReportingRoute()){
+        loadReportingMonths().catch(() => {});
+      }
+
+      return payload;
+    } catch(error) {
+      const message = error && error.message ? error.message : "Upload failed";
+      if(target === settingsResults){
+        renderSettingsMessage(message, "warning");
+      } else {
+        addMessage(message, "assistant");
+      }
+      throw error;
+    } finally {
+      if(target === settingsResults && settingsResultsCard){
+        settingsResultsCard.classList.remove("hidden");
+      }
+      setPageLoading(false);
+    }
+  }
+
+  function validateUploadFiles(files){
+    const allowed = [];
+    const rejected = [];
+
+    (files || []).forEach(file => {
+      const name = file && file.name ? file.name : "";
+      if(!name.toLowerCase().endsWith(".xlsx")){
+        rejected.push(name || "Unnamed file");
+        return;
+      }
+      allowed.push(file);
     });
 
-    if(res.status === 401){
-      openLogin("/");
-      throw new Error("Please login first, then upload again.");
+    return { allowed, rejected };
+  }
+
+  async function bulkUploadFiles(files){
+    const fileList = Array.from(files || []);
+    const { allowed, rejected } = validateUploadFiles(fileList);
+
+    if(rejected.length){
+      renderSettingsMessage(
+        `Unsupported file type(s): ${rejected.join(", ")}. Please upload .xlsx files only.`,
+        "warning"
+      );
     }
 
-    if(!res.ok) throw new Error("File upload failed");
-
-    const payload = await res.json();
-    const data = getUploadData(payload);
-
-    if(data && data.status === "ALREADY_EXISTS"){
-      appendResultTarget(target, {
-        message: data.message || `Data already exists for report_month ${data.report_month}. Insert skipped.`,
-        type: "warning",
-        records: data.sample_records || [],
-        title: `Sample records for ${data.report_month}`,
-        meta: `${data.existing_record_count || 0} existing records`
-      }, false);
-      if(target === settingsResults && settingsResultsCard){
-        settingsResultsCard.classList.remove("hidden");
+    if(!allowed.length){
+      if(!rejected.length){
+        renderSettingsMessage("Please select one or more .xlsx files to upload.", "warning");
       }
-      return payload;
+      return null;
     }
 
-    if(data && data.status === "INSERTED"){
-      appendResultTarget(target, {
-        message: `Data uploaded for ${data.report_month}. Inserted rows: ${data.inserted_rows}.`,
-        type: "success"
-      }, false);
-      if(target === settingsResults && settingsResultsCard){
-        settingsResultsCard.classList.remove("hidden");
-      }
-      return payload;
-    }
-
-    appendResultTarget(target, {
-      message: "Upload completed.",
-      type: "success",
-      records: data && data.sample_records ? data.sample_records : null,
-      title: "Sample records"
-    }, false);
-    if(target === settingsResults && settingsResultsCard){
+    setPageLoading(true, "Uploading statements...");
+    if(settingsResultsCard){
       settingsResultsCard.classList.remove("hidden");
     }
+    settingsResults.innerHTML = `<div class="result-note">Uploading ${allowed.length} file(s)...</div>`;
 
-    return payload;
+    try {
+      const formData = new FormData();
+      allowed.forEach(file => formData.append("files", file));
+
+      const res = await fetch("/upload/bulk", {
+        method: "POST",
+        body: formData
+      });
+
+      if(res.status === 401){
+        openLogin("/settings");
+        throw new Error("Please login first, then upload again.");
+      }
+
+      const payloadText = await res.text();
+      let payload = null;
+      try {
+        payload = payloadText ? JSON.parse(payloadText) : null;
+      } catch (parseError) {
+        throw new Error(payloadText || "Bulk upload failed");
+      }
+
+      if(!res.ok){
+        throw new Error((payload && payload.error) || payloadText || "Bulk upload failed");
+      }
+
+      const results = payload && Array.isArray(payload.results) ? payload.results : [];
+      const inserted = results.filter(item => item.status === "INSERTED").length;
+      const duplicates = results.filter(item => item.status === "ALREADY_EXISTS");
+      const errorItems = results.filter(item => item.status !== "INSERTED" && item.status !== "ALREADY_EXISTS");
+      renderSettingsBulkResult({
+        processed: results.length,
+        inserted,
+        duplicates,
+        errors: errorItems.filter(item => item.status !== "ALREADY_EXISTS")
+      });
+
+      return payload;
+    } catch(error) {
+      renderSettingsMessage(error.message || "Bulk upload failed", "warning");
+      throw error;
+    } finally {
+      setPageLoading(false);
+    }
   }
 
   async function handleSubmit(){
@@ -893,7 +1071,7 @@
     if(fileInput.files && fileInput.files.length > 0){
       const selectedFile = fileInput.files[0];
       if(pendingUploadTarget === "settings"){
-        uploadFile(selectedFile, { target: "settings" });
+        uploadFile(selectedFile, { target: "settings" }).catch(() => {});
         pendingUploadTarget = "home";
         fileInput.value = "";
       } else {
@@ -901,6 +1079,15 @@
       }
     }
   });
+
+  if(settingsBulkFileInput){
+    settingsBulkFileInput.addEventListener("change", () => {
+      if(settingsBulkFileInput.files && settingsBulkFileInput.files.length > 0){
+        bulkUploadFiles(settingsBulkFileInput.files).catch(() => {});
+        settingsBulkFileInput.value = "";
+      }
+    });
+  }
 
   function renderReportingCell(row, column){
     const value = formatCell(row[column.key], column.key);
@@ -1309,7 +1496,7 @@
     if(!select || !currentUser) return;
 
     const currentValue = select.value;
-    const res = await fetch("/api/reporting/months");
+    const res = await fetch(`/api/reporting/months?_=${Date.now()}`, { cache: "no-store" });
 
     if(!res.ok) return;
 
@@ -1383,6 +1570,7 @@
 
   async function loadReportingData(page){
     reportingPageNo = page || 1;
+    await loadReportingMonths();
 
     const params = new URLSearchParams();
     params.set("page", reportingPageNo);
