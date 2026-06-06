@@ -9,6 +9,7 @@
 </head>
 
 <body>
+<button id="mobileSidebarToggle" class="mobile-sidebar-toggle" type="button" aria-label="Open navigation">☰</button>
 <div class="app">
   <div class="app-shell">
     <aside class="app-sidebar">
@@ -44,6 +45,13 @@
     </aside>
 
   <main class="main">
+    <div id="pageLoading" class="page-loading hidden" aria-live="polite" aria-busy="true">
+      <div class="page-loading-card">
+        <div class="page-loading-spinner"></div>
+        <div id="pageLoadingText" class="page-loading-text">Loading...</div>
+      </div>
+    </div>
+
     <section id="landingPage" class="page">
       <section id="homeDashboard" class="home-dashboard">
         <div class="home-hero">
@@ -56,142 +64,38 @@
           </div>
         </div>
 
-        <div class="dashboard-kpis home-kpis">
-          <article class="dashboard-kpi-card">
-            <div>
-              <span>Total Royalties</span>
-              <strong>$52,347.89</strong>
-              <small class="positive">↑ 14.2% vs Apr 1 - Apr 30</small>
-            </div>
-            <i class="purple">$</i>
-          </article>
-          <article class="dashboard-kpi-card">
-            <div>
-              <span>Total Units Sold</span>
-              <strong>18,392</strong>
-              <small class="positive">↑ 8.7% vs Apr 1 - Apr 30</small>
-            </div>
-            <i class="blue">▰</i>
-          </article>
-          <article class="dashboard-kpi-card">
-            <div>
-              <span>Total Titles Sold</span>
-              <strong>24</strong>
-              <small class="neutral">— vs Apr 1 - Apr 30</small>
-            </div>
-            <i class="orange">▥</i>
-          </article>
-          <article class="dashboard-kpi-card">
-            <div>
-              <span>Average Royalty / Unit</span>
-              <strong>$2.85</strong>
-              <small class="positive">↑ 5.1% vs Apr 1 - Apr 30</small>
-            </div>
-            <i class="green">⌁</i>
-          </article>
-        </div>
-
-        <div class="dashboard-grid">
-          <section class="dashboard-panel chart-panel">
-            <div class="dashboard-panel-header">
-              <h2>Royalties Over Time</h2>
-              <div class="segmented-control">
-                <button type="button">Day</button>
-                <button type="button">Week</button>
-                <button type="button" class="active">Month</button>
-              </div>
-            </div>
-            <div class="line-chart">
-              <div class="chart-tooltip">May 15, 2024<br><strong>$4,587.21</strong></div>
-              <svg viewBox="0 0 620 260" role="img" aria-label="Dummy royalty line chart">
-                <defs>
-                  <linearGradient id="royaltyArea" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stop-color="#6d3df4" stop-opacity=".26"/>
-                    <stop offset="100%" stop-color="#6d3df4" stop-opacity="0"/>
-                  </linearGradient>
-                </defs>
-                <g class="grid-lines">
-                  <line x1="28" x2="596" y1="34" y2="34"/>
-                  <line x1="28" x2="596" y1="90" y2="90"/>
-                  <line x1="28" x2="596" y1="146" y2="146"/>
-                  <line x1="28" x2="596" y1="202" y2="202"/>
-                </g>
-                <path class="area" d="M28 204 L55 194 L82 169 L110 172 L138 140 L166 133 L194 160 L222 166 L250 126 L278 128 L306 98 L334 88 L362 112 L390 88 L418 90 L446 118 L474 86 L502 112 L530 60 L558 62 L586 92 L596 80 L596 218 L28 218 Z"/>
-                <path class="line" d="M28 204 L55 194 L82 169 L110 172 L138 140 L166 133 L194 160 L222 166 L250 126 L278 128 L306 98 L334 88 L362 112 L390 88 L418 90 L446 118 L474 86 L502 112 L530 60 L558 62 L586 92 L596 80"/>
-                <circle cx="362" cy="112" r="6"/>
-              </svg>
-              <div class="chart-axis"><span>May 1</span><span>May 8</span><span>May 15</span><span>May 22</span><span>May 29</span></div>
+        <div class="home-summary-grid">
+          <section class="home-summary-panel home-summary-panel-primary">
+            <div class="home-summary-kicker">Workspace</div>
+            <h2>Everything in one place</h2>
+            <p>Jump into reporting, ask AI, or manage uploads without the old demo dashboard clutter.</p>
+            <div class="home-summary-actions">
+              <button type="button" class="home-summary-btn" onclick="window.location.href='/reporting'">Open Reporting</button>
+              <button type="button" class="home-summary-btn secondary" onclick="window.location.href='/ai-assistance'">Ask AI</button>
             </div>
           </section>
 
-          <section class="dashboard-panel format-panel">
-            <div class="dashboard-panel-header">
-              <h2>Royalties by Format</h2>
-            </div>
-            <div class="donut-row">
-              <div class="donut-chart"><span>$52,347.89<small>Total</small></span></div>
-              <div class="donut-legend">
-                <div><span class="dot purple"></span><strong>eBook</strong><em>60.3%</em><b>$31,586.42</b></div>
-                <div><span class="dot blue"></span><strong>Paperback</strong><em>24.7%</em><b>$12,936.21</b></div>
-                <div><span class="dot green"></span><strong>Audiobook</strong><em>12.1%</em><b>$6,341.27</b></div>
-                <div><span class="dot orange"></span><strong>Other</strong><em>2.9%</em><b>$1,484.99</b></div>
-              </div>
-            </div>
-            <a class="dashboard-link" href="#">View full breakdown →</a>
+          <section class="home-summary-panel home-summary-panel-side">
+            <div class="home-summary-kicker">Quick Access</div>
+            <ul class="home-summary-list">
+              <li><strong>Reporting</strong><span>Inspect and filter your royalty rows</span></li>
+              <li><strong>AI Assistance</strong><span>Ask questions or upload a statement</span></li>
+              <li><strong>Settings</strong><span>Manage uploads and data cleanup</span></li>
+            </ul>
           </section>
-
-          <aside class="dashboard-panel insights-panel">
-            <div class="dashboard-panel-header">
-              <h2>AI Insights <span>Beta</span></h2>
-              <strong>✦</strong>
-            </div>
-            <div class="insight-item purple"><i>♜</i><p><b>Your royalties increased by 14.2%</b>Great job! Royalties are up compared to the previous period.</p></div>
-            <div class="insight-item green"><i>▥</i><p><b>"The Silent Path" is trending</b>This title saw a 28% increase in sales this month.</p></div>
-            <div class="insight-item orange"><i>⌁</i><p><b>Audiobook sales growing</b>Your audiobook sales increased by 35% compared to last month.</p></div>
-            <button type="button" class="wide-outline-btn">View more insights</button>
-          </aside>
-
-          <section class="dashboard-panel books-panel">
-            <div class="dashboard-panel-header"><h2>Top Performing Books</h2></div>
-            <table class="dashboard-books-table">
-              <thead><tr><th>Title</th><th>Units Sold</th><th>Royalties</th><th>Change</th></tr></thead>
-              <tbody>
-                <tr><td><span class="book-cover one"></span><b>The Silent Path</b><small>Jane Author</small></td><td>4,392</td><td>$12,450.75</td><td class="positive">↑ 28.4%</td></tr>
-                <tr><td><span class="book-cover two"></span><b>Echoes of Tomorrow</b><small>Jane Author</small></td><td>3,129</td><td>$8,764.21</td><td class="positive">↑ 12.7%</td></tr>
-                <tr><td><span class="book-cover three"></span><b>Beneath the Surface</b><small>Jane Author</small></td><td>2,983</td><td>$7,654.31</td><td class="negative">↓ -4.3%</td></tr>
-                <tr><td><span class="book-cover four"></span><b>The Forgotten Light</b><small>Jane Author</small></td><td>2,421</td><td>$6,215.90</td><td class="positive">↑ 8.1%</td></tr>
-                <tr><td><span class="book-cover five"></span><b>Rise of the Breakers</b><small>Jane Author</small></td><td>1,892</td><td>$4,321.66</td><td class="positive">↑ 18.3%</td></tr>
-              </tbody>
-            </table>
-            <a class="dashboard-link" href="#">View all books →</a>
-          </section>
-
-          <section class="dashboard-panel marketplace-panel">
-            <div class="dashboard-panel-header"><h2>Royalties by Marketplace</h2></div>
-            <div class="market-row"><span>Amazon KDP</span><div><i style="width:100%"></i></div><b>$24,231.20</b></div>
-            <div class="market-row"><span>Apple Books</span><div><i style="width:54%"></i></div><b>$9,742.11</b></div>
-            <div class="market-row"><span>Google Play Books</span><div><i style="width:38%"></i></div><b>$6,521.34</b></div>
-            <div class="market-row"><span>IngramSpark</span><div><i style="width:30%"></i></div><b>$5,214.76</b></div>
-            <div class="market-row"><span>Kobo</span><div><i style="width:18%"></i></div><b>$3,125.41</b></div>
-            <div class="market-row"><span>Other</span><div><i style="width:9%"></i></div><b>$1,512.07</b></div>
-            <a class="dashboard-link" href="#">View full report →</a>
-          </section>
-
-          <aside class="dashboard-panel activity-panel">
-            <div class="dashboard-panel-header"><h2>Recent Activity</h2></div>
-            <div class="activity-item"><span>ACX statement uploaded</span><small>May 31, 2024 10:24 AM</small></div>
-            <div class="activity-item"><span>KDP statement uploaded</span><small>May 31, 2024 10:18 AM</small></div>
-            <div class="activity-item"><span>Monthly report generated</span><small>May 31, 2024 10:05 AM</small></div>
-            <div class="activity-item"><span>Royalty payment received</span><small>May 30, 2024 09:42 AM</small></div>
-            <div class="activity-item"><span>Apple Books statement uploaded</span><small>May 29, 2024 04:21 PM</small></div>
-            <a class="dashboard-link" href="#">View all activity →</a>
-          </aside>
         </div>
       </section>
 
     </section>
 
     <section id="aiPage" class="page">
+      <header class="dashboard-header ai-page-header">
+        <div>
+          <h1>AI Assistance</h1>
+          <p>Ask questions, upload statements, and explore royalty insights from your data.</p>
+        </div>
+      </header>
+
       <div id="authGate" class="auth-gate hidden">
         <button id="gateLoginBtn" class="google-login-btn" type="button" aria-label="Login with Google">G</button>
         <div class="auth-gate-message">Please log in to start using the royalty workspace.</div>
@@ -213,6 +117,7 @@
         </div>
         <div class="hint">Drop KDP or ACX royalty Excel files here, ask a question, or do both together.</div>
       </div>
+
     </section>
 
     <section id="settingsPage" class="page">
@@ -222,17 +127,18 @@
       </div>
 
       <div class="settings-panel">
-        <div id="settingsCard" class="dashboard-panel settings-card">
-          <div class="dashboard-panel-header">
-            <h2>Settings</h2>
+        <header class="dashboard-header settings-page-header">
+          <div>
+            <h1>Settings</h1>
+            <p>Upload statements, manage your source files, and clean up your data when needed.</p>
           </div>
-          <div class="settings-actions">
-            <button id="settingsUploadBtn" class="sidebar-action-btn" type="button">Upload Statement</button>
-            <button id="deleteAllDataBtn" class="sidebar-action-btn hidden" type="button">Delete All My Data</button>
+          <div class="dashboard-actions">
+            <button id="settingsUploadBtn" class="dashboard-filter-btn" type="button">Upload Statement</button>
+            <button id="deleteAllDataBtn" class="dashboard-export-btn hidden" type="button">Delete All My Data</button>
           </div>
-        </div>
+        </header>
 
-        <div class="dashboard-panel settings-summary-card">
+        <div id="settingsResultsCard" class="dashboard-panel settings-summary-card hidden">
           <div class="dashboard-panel-header">
             <h2>Upload Results</h2>
           </div>
@@ -358,15 +264,10 @@
               </div>
             </section>
 
-            <section class="dashboard-panel chart-panel">
-              <div class="dashboard-panel-header">
-                <h2>Royalties Over Time</h2>
-                <div class="segmented-control">
-                  <button type="button">Day</button>
-                  <button type="button">Week</button>
-                  <button type="button" class="active">Month</button>
-                </div>
-              </div>
+          <section class="dashboard-panel chart-panel">
+            <div class="dashboard-panel-header">
+              <h2>Royalties Over Time</h2>
+            </div>
               <div class="line-chart">
                 <div class="chart-tooltip">May 15, 2024<br><strong>$4,587.21</strong></div>
                 <svg viewBox="0 0 620 260" role="img" aria-label="Dummy royalty line chart">
@@ -392,7 +293,7 @@
 
             <section class="dashboard-panel format-panel">
               <div class="dashboard-panel-header">
-                <h2>Royalties by Format</h2>
+                <h2>Royalties by Source</h2>
               </div>
               <div class="donut-row">
                 <div class="donut-chart"><span>$52,347.89<small>Total</small></span></div>
@@ -403,7 +304,6 @@
                   <div><span class="dot orange"></span><strong>Other</strong><em>2.9%</em><b>$1,484.99</b></div>
                 </div>
               </div>
-              <a class="dashboard-link" href="#">View full breakdown →</a>
             </section>
           </div>
 
@@ -416,50 +316,15 @@
               <div class="insight-item purple"><i>♜</i><p><b>Your royalties increased by 14.2%</b>Great job! Royalties are up compared to the previous period.</p></div>
               <div class="insight-item green"><i>▥</i><p><b>"The Silent Path" is trending</b>This title saw a 28% increase in sales this month.</p></div>
               <div class="insight-item orange"><i>⌁</i><p><b>Audiobook sales growing</b>Your audiobook sales increased by 35% compared to last month.</p></div>
-              <button type="button" class="wide-outline-btn">View more insights</button>
+            <button type="button" class="wide-outline-btn" onclick="window.location.href='/ai-assistance'">View more insights</button>
             </aside>
 
             <section class="dashboard-panel books-panel">
               <div class="dashboard-panel-header"><h2>Top Performing Books</h2></div>
               <table class="dashboard-books-table">
-                <thead><tr><th>Title</th><th>Units Sold</th><th>Royalties</th><th>Change</th></tr></thead>
-                <tbody>
-                  <tr><td><span class="book-cover one"></span><b>The Silent Path</b><small>Jane Author</small></td><td>4,392</td><td>$12,450.75</td><td class="positive">↑ 28.4%</td></tr>
-                  <tr><td><span class="book-cover two"></span><b>Echoes of Tomorrow</b><small>Jane Author</small></td><td>3,129</td><td>$8,764.21</td><td class="positive">↑ 12.7%</td></tr>
-                  <tr><td><span class="book-cover three"></span><b>Beneath the Surface</b><small>Jane Author</small></td><td>2,983</td><td>$7,654.31</td><td class="negative">↓ -4.3%</td></tr>
-                  <tr><td><span class="book-cover four"></span><b>The Forgotten Light</b><small>Jane Author</small></td><td>2,421</td><td>$6,215.90</td><td class="positive">↑ 8.1%</td></tr>
-                  <tr><td><span class="book-cover five"></span><b>Rise of the Breakers</b><small>Jane Author</small></td><td>1,892</td><td>$4,321.66</td><td class="positive">↑ 18.3%</td></tr>
-                </tbody>
               </table>
-              <a class="dashboard-link" href="#">View all books →</a>
+              <a class="dashboard-link" href="/reporting">View all books →</a>
             </section>
-
-            <section class="dashboard-panel marketplace-panel">
-              <div class="dashboard-panel-header"><h2>Royalties by Marketplace</h2></div>
-              <div class="market-row"><span>Amazon KDP</span><div><i style="width:100%"></i></div><b>$24,231.20</b></div>
-              <div class="market-row"><span>Apple Books</span><div><i style="width:54%"></i></div><b>$9,742.11</b></div>
-              <div class="market-row"><span>Google Play Books</span><div><i style="width:38%"></i></div><b>$6,521.34</b></div>
-              <div class="market-row"><span>IngramSpark</span><div><i style="width:30%"></i></div><b>$5,214.76</b></div>
-              <div class="market-row"><span>Kobo</span><div><i style="width:18%"></i></div><b>$3,125.41</b></div>
-              <div class="market-row"><span>Other</span><div><i style="width:9%"></i></div><b>$1,512.07</b></div>
-              <a class="dashboard-link" href="#">View full report →</a>
-            </section>
-
-            <aside class="dashboard-side-stack">
-              <section class="dashboard-panel export-panel">
-                <h2>Export Your Report</h2>
-                <div class="export-buttons">
-                  <button type="button"><span class="pdf">PDF</span></button>
-                  <button type="button"><span class="excel">Excel</span></button>
-                  <button type="button"><span class="csv">CSV</span></button>
-                </div>
-              </section>
-              <section class="dashboard-panel scheduled-panel">
-                <h2>Scheduled Reports</h2>
-                <p>Get your reports delivered to your email automatically.</p>
-                <button type="button">▣ Schedule a Report</button>
-              </section>
-            </aside>
           </div>
         </div>
       </div>

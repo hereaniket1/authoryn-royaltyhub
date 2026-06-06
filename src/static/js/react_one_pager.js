@@ -64,10 +64,14 @@
   const dashboardPage = document.getElementById("dashboardPage");
   const reportingPage = document.getElementById("reportingPage");
   const homeDashboard = document.getElementById("homeDashboard");
+  const mobileSidebarToggle = document.getElementById("mobileSidebarToggle");
+  const appShell = document.querySelector(".app-shell");
   const authGate = document.getElementById("authGate");
   const authGateSettings = document.getElementById("authGateSettings");
-  const settingsCard = document.getElementById("settingsCard");
+  const settingsResultsCard = document.getElementById("settingsResultsCard");
   const settingsResults = document.getElementById("settingsResults");
+  const pageLoading = document.getElementById("pageLoading");
+  const pageLoadingText = document.getElementById("pageLoadingText");
   const chatArea = document.getElementById("chatArea");
   const composerWrap = document.getElementById("composerWrap");
   const queryEl = document.getElementById("query");
@@ -108,10 +112,14 @@
   const dashboardCustomRange = document.getElementById("dashboardCustomRange");
   const dashboardCustomFrom = document.getElementById("dashboardCustomFrom");
   const dashboardCustomTo = document.getElementById("dashboardCustomTo");
-  const salesCountryPanel = document.querySelector(".sales-country-panel");
-  const salesCountryChart = document.querySelector(".sales-country-panel .country-viz");
-  const royaltiesOverTimeChart = document.querySelector(".chart-panel .line-chart");
-  const royaltiesByFormatPanel = document.querySelector(".format-panel");
+  const dashboardChartsRoot = dashboardPage ? dashboardPage.querySelector(".dashboard-grid-feature") : null;
+  const dashboardTertiaryRoot = dashboardPage ? dashboardPage.querySelector(".dashboard-grid-tertiary") : null;
+  const salesCountryPanel = dashboardChartsRoot ? dashboardChartsRoot.querySelector(".sales-country-panel") : null;
+  const salesCountryChart = dashboardChartsRoot ? dashboardChartsRoot.querySelector(".sales-country-panel .country-viz") : null;
+  const royaltiesOverTimeChart = dashboardChartsRoot ? dashboardChartsRoot.querySelector(".chart-panel .line-chart") : null;
+  const royaltiesByFormatPanel = dashboardChartsRoot ? dashboardChartsRoot.querySelector(".format-panel") : null;
+  const topBooksPanel = dashboardTertiaryRoot ? dashboardTertiaryRoot.querySelector(".books-panel") : null;
+  const insightsPanel = dashboardTertiaryRoot ? dashboardTertiaryRoot.querySelector(".insights-panel") : null;
   const recordOverlay = document.getElementById("recordOverlay");
   const recordOverlayTitle = document.getElementById("recordOverlayTitle");
   const recordOverlayContent = document.getElementById("recordOverlayContent");
@@ -146,6 +154,20 @@
     return window.location.pathname === "/settings";
   }
 
+  function closeMobileSidebar(){
+    if(appShell){
+      appShell.classList.remove("sidebar-open");
+    }
+  }
+
+  function setPageLoading(active, text){
+    if(!pageLoading) return;
+    pageLoading.classList.toggle("hidden", !active);
+    if(pageLoadingText && text){
+      pageLoadingText.innerText = text;
+    }
+  }
+
   function updateAuthUI(){
     const isAuthenticated = Boolean(currentUser);
 
@@ -154,7 +176,9 @@
     homeDashboard.classList.remove("hidden");
     authGate.classList.toggle("hidden", isAuthenticated);
     authGateSettings.classList.toggle("hidden", isAuthenticated);
-    settingsCard.classList.toggle("hidden", !isAuthenticated);
+    if(settingsResultsCard){
+      settingsResultsCard.classList.toggle("hidden", !isAuthenticated || !settingsResults.children.length);
+    }
     composerWrap.classList.toggle("hidden", !isAuthenticated || !isAIRoute());
     chatArea.classList.toggle("hidden", !isAuthenticated || !isAIRoute());
 
@@ -188,12 +212,14 @@
       loginBtn.classList.remove("hidden");
       logoutBtn.classList.add("hidden");
       deleteAllDataBtn.classList.add("hidden");
+      if(settingsResultsCard) settingsResultsCard.classList.add("hidden");
       showFile(null);
       queryEl.value = "";
     }
   }
 
   function showCorrectPage(){
+    closeMobileSidebar();
     landingPage.classList.remove("active");
     aiPage.classList.remove("active");
     settingsPage.classList.remove("active");
@@ -211,19 +237,25 @@
     }
 
     if(isDashboardRoute()){
+      setPageLoading(true, "Loading dashboard...");
       dashboardPage.classList.add("active");
       if(currentUser){
         loadDashboardSummary();
+      } else {
+        setPageLoading(false);
       }
       return;
     }
 
     if(isReportingRoute()){
       document.body.classList.add("dashboard-view");
+      setPageLoading(true, "Loading reports...");
       reportingPage.classList.add("active");
       if(currentUser){
         loadReportingMonths();
         loadReportingData(1);
+      } else {
+        setPageLoading(false);
       }
       return;
     }
@@ -658,6 +690,26 @@
     window.location.href = "/";
   });
 
+  if(mobileSidebarToggle){
+    mobileSidebarToggle.addEventListener("click", () => {
+      if(appShell){
+        appShell.classList.toggle("sidebar-open");
+      }
+    });
+  }
+
+  document.addEventListener("click", (event) => {
+    if(!appShell || !mobileSidebarToggle) return;
+    if(window.innerWidth > 980) return;
+    if(appShell.classList.contains("sidebar-open")){
+      const clickedSidebar = event.target.closest(".app-sidebar");
+      const clickedToggle = event.target.closest("#mobileSidebarToggle");
+      if(!clickedSidebar && !clickedToggle){
+        appShell.classList.remove("sidebar-open");
+      }
+    }
+  });
+
   deleteAllDataBtn.addEventListener("click", async () => {
     const ok = window.confirm("Delete all your royalty data and your user account? This cannot be undone.");
     if(!ok) return;
@@ -746,6 +798,9 @@
         title: `Sample records for ${data.report_month}`,
         meta: `${data.existing_record_count || 0} existing records`
       }, false);
+      if(target === settingsResults && settingsResultsCard){
+        settingsResultsCard.classList.remove("hidden");
+      }
       return payload;
     }
 
@@ -754,6 +809,9 @@
         message: `Data uploaded for ${data.report_month}. Inserted rows: ${data.inserted_rows}.`,
         type: "success"
       }, false);
+      if(target === settingsResults && settingsResultsCard){
+        settingsResultsCard.classList.remove("hidden");
+      }
       return payload;
     }
 
@@ -763,6 +821,9 @@
       records: data && data.sample_records ? data.sample_records : null,
       title: "Sample records"
     }, false);
+    if(target === settingsResults && settingsResultsCard){
+      settingsResultsCard.classList.remove("hidden");
+    }
 
     return payload;
   }
@@ -956,6 +1017,26 @@
     return text ? text.replace(/\b\w/g, char => char.toUpperCase()) : "Other";
   }
 
+  function humanizeCountryLabel(value){
+    const code = String(value || "").trim().toUpperCase();
+    const countryNames = {
+      US: "United States",
+      GB: "United Kingdom",
+      AU: "Australia",
+      CA: "Canada",
+      DE: "Germany",
+      IN: "India",
+      JP: "Japan",
+      FR: "France",
+      IT: "Italy",
+      ES: "Spain",
+      EU: "Europe",
+      OTHER: "Other"
+    };
+
+    return countryNames[code] || humanizeDashboardLabel(code);
+  }
+
   function renderDashboardCountryChart(items){
     if(!salesCountryChart) return;
 
@@ -963,21 +1044,25 @@
     const max = Math.max(...rows.map(item => Number(item.units_sold || 0)), 1);
     const colors = ["#6d3df4", "#3b82f6", "#10b981", "#f97316", "#ef4444", "#8b5cf6"];
 
-    salesCountryChart.innerHTML = rows.length
-      ? rows.map((item, idx) => {
-          const value = Number(item.units_sold || 0);
-          const height = Math.max((value / max) * 100, 4);
-          return `
-            <div class="country-bar">
-              <div class="country-bar-track">
-                <i style="height:${height}%; background: linear-gradient(180deg, ${colors[idx % colors.length]}, ${colors[(idx + 1) % colors.length]});"></i>
-              </div>
-              <span>${escapeHtml(humanizeDashboardLabel(item.country_code))}</span>
-              <b>${formatDashboardNumber(value)}</b>
-            </div>
-          `;
-        }).join("")
-      : `<div style="padding: 10px 0;color:#6b7280;">No country data available.</div>`;
+    if(rows.length === 0){
+      salesCountryChart.innerHTML = `<div style="padding: 10px 0;color:#6b7280;">No country data available.</div>`;
+      return;
+    }
+
+    const bars = rows.map((item, idx) => {
+      const value = Number(item.units_sold || 0);
+      const width = Math.max((value / max) * 100, 4);
+      const barColor = colors[idx % colors.length];
+      return `
+        <div class="country-row">
+          <span class="country-label">${escapeHtml(humanizeCountryLabel(item.country_code))}</span>
+          <div class="country-track"><i style="width:${width}%; background:${barColor};"></i></div>
+          <b>${formatDashboardNumber(value)}</b>
+        </div>
+      `;
+    }).join("");
+
+    salesCountryChart.innerHTML = `<div class="country-list">${bars}</div>`;
   }
 
   function renderDashboardTimeSeries(items){
@@ -1034,7 +1119,64 @@
     return date.toLocaleDateString(undefined, { month: "short", year: "numeric" });
   }
 
-  function renderDashboardFormatChart(items){
+  function renderDashboardTopBooks(items){
+    if(!topBooksPanel) return;
+
+    const rows = Array.isArray(items) ? items : [];
+    if(rows.length === 0){
+      topBooksPanel.innerHTML = `
+        <div class="dashboard-panel-header"><h2>Top Performing Books</h2></div>
+        <div style="padding:16px 24px 22px;color:#6b7280;">No books found for this range.</div>
+      `;
+      return;
+    }
+
+    const visibleRows = rows.slice(0, 5);
+    const body = visibleRows.map((item, idx) => {
+      const change = item.change || {};
+      const pct = Number(change.pct || 0);
+      const direction = change.direction || "neutral";
+      const arrow = direction === "positive" ? "↑" : direction === "negative" ? "↓" : "—";
+      const changeClass = direction === "positive" ? "positive" : direction === "negative" ? "negative" : "neutral";
+      const title = escapeHtml(item.title || "Untitled");
+      const author = escapeHtml(item.author || "Unknown Author");
+      const coverClass = ["one", "two", "three", "four", "five"][idx % 5];
+
+      return `
+        <tr>
+          <td>
+            <span class="book-cover ${coverClass}"></span>
+            <b title="${title}">${title}</b>
+            <small>${author}</small>
+          </td>
+          <td>${formatDashboardNumber(item.units_sold)}</td>
+          <td>${formatDashboardCurrency(item.earnings)}</td>
+          <td class="${changeClass}">${arrow} ${Math.abs(pct).toFixed(1)}%</td>
+        </tr>
+      `;
+    }).join("");
+
+    topBooksPanel.innerHTML = `
+      <div class="dashboard-panel-header"><h2>Top Performing Books</h2></div>
+      <table class="dashboard-books-table">
+        <thead>
+          <tr><th>Title</th><th>Units Sold</th><th>Royalties</th><th>Change</th></tr>
+        </thead>
+        <tbody>${body}</tbody>
+      </table>
+      <a class="dashboard-link" href="/reporting">View all books →</a>
+    `;
+  }
+
+  function renderDashboardInsights(){
+    if(!insightsPanel) return;
+    const actionBtn = insightsPanel.querySelector(".wide-outline-btn");
+    if(actionBtn){
+      actionBtn.onclick = () => window.location.href = "/ai-assistance";
+    }
+  }
+
+  function renderDashboardSourceChart(items){
     if(!royaltiesByFormatPanel) return;
 
     const rows = Array.isArray(items) ? items : [];
@@ -1042,6 +1184,14 @@
     const colors = ["#6d3df4", "#3b82f6", "#10b981", "#f97316", "#ef4444", "#8b5cf6"];
 
     if(rows.length === 0 || total <= 0){
+      royaltiesByFormatPanel.innerHTML = `
+        <div class="dashboard-panel-header">
+          <h2>Royalties by Source</h2>
+        </div>
+        <div class="donut-row empty-state">
+          <div class="empty-chart">No source breakdown yet.</div>
+        </div>
+      `;
       return;
     }
 
@@ -1058,7 +1208,7 @@
       return `
         <div>
           <span class="dot" style="background:${colors[idx % colors.length]};"></span>
-          <strong>${escapeHtml(humanizeDashboardLabel(item.royalty_type))}</strong>
+          <strong>${escapeHtml(humanizeDashboardLabel(item.source_platform))}</strong>
           <em>${pct}%</em>
           <b>${formatDashboardCurrency(item.earnings)}</b>
         </div>
@@ -1068,13 +1218,12 @@
     const totalText = formatDashboardCurrency(total);
     royaltiesByFormatPanel.innerHTML = `
       <div class="dashboard-panel-header">
-        <h2>Royalties by Format</h2>
+        <h2>Royalties by Source</h2>
       </div>
       <div class="donut-row">
         <div class="donut-chart" style="background: conic-gradient(${segments});"><span>${totalText}<small>Total</small></span></div>
         <div class="donut-legend">${legend}</div>
       </div>
-      <a class="dashboard-link" href="#">View full breakdown →</a>
     `;
   }
 
@@ -1115,18 +1264,22 @@
     const charts = summary.charts || {};
     renderDashboardCountryChart(charts.sales_by_country || []);
     renderDashboardTimeSeries(charts.royalties_over_time || []);
-    renderDashboardFormatChart(charts.royalties_by_format || []);
+    renderDashboardSourceChart(charts.royalties_by_source || []);
+    renderDashboardTopBooks(summary.top_books || []);
+    renderDashboardInsights();
   }
 
   async function loadDashboardSummary(){
     if(!currentUser || !dashboardRangeSelect) return;
 
+    setPageLoading(true, "Loading dashboard...");
     const range = dashboardRangeSelect.value || "5m";
     const params = new URLSearchParams();
     params.set("range", range);
 
     if(range === "custom"){
       if(!dashboardCustomFrom || !dashboardCustomTo || !dashboardCustomFrom.value || !dashboardCustomTo.value){
+        setPageLoading(false);
         return;
       }
 
@@ -1137,11 +1290,13 @@
     const res = await fetch(`/api/dashboard/summary?${params.toString()}`);
 
     if(!res.ok){
+      setPageLoading(false);
       return;
     }
 
     const payload = await res.json();
     applyDashboardSummary(payload.results || null);
+    setPageLoading(false);
   }
 
   function toggleCustomDashboardRange(){
@@ -1256,6 +1411,7 @@
       <div class="table-card">
         <div style="padding:18px;color:#6b7280;">Loading reporting data...</div>
       </div>`;
+    setPageLoading(true, "Loading reports...");
 
     const res = await fetch("/api/reporting?" + params.toString());
 
@@ -1263,6 +1419,7 @@
       summary.innerText = "Login required.";
       target.innerHTML = "";
       status.innerHTML = `<div class="result-note result-warning">Please login to view reporting.</div>`;
+      setPageLoading(false);
       openLogin("/reporting");
       return;
     }
@@ -1270,6 +1427,7 @@
     if(!res.ok){
       target.innerHTML = "";
       status.innerHTML = `<div class="result-note result-warning">Failed to load reporting data.</div>`;
+      setPageLoading(false);
       return;
     }
 
@@ -1291,6 +1449,7 @@
 
     document.getElementById("prevPageBtn").disabled = reportingPageNo <= 1;
     document.getElementById("nextPageBtn").disabled = reportingPageNo >= reportingTotalPages;
+    setPageLoading(false);
   }
 
   const applyFiltersBtn = document.getElementById("applyFiltersBtn");

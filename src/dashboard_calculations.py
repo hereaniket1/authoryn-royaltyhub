@@ -189,18 +189,18 @@ def _fetch_time_series(conn, user_id, latest_report_month, range_config, custom_
         return cursor.fetchall() or []
 
 
-def _fetch_format_breakdown(conn, user_id, latest_report_month, range_config, custom_from=None, custom_to=None):
+def _fetch_source_breakdown(conn, user_id, latest_report_month, range_config, custom_from=None, custom_to=None):
     if custom_from and custom_to:
         sql = """
             SELECT
-                COALESCE(NULLIF(royalty_type, ''), 'Other') AS royalty_type,
+                COALESCE(NULLIF(source_platform, ''), 'Other') AS source_platform,
                 COALESCE(SUM(earnings_in_base_currency), 0) AS earnings
             FROM royalty_transactions
             WHERE user_id = %s
               AND report_month >= %s
               AND report_month <= %s
             GROUP BY 1
-            ORDER BY earnings DESC, royalty_type ASC
+            ORDER BY earnings DESC, source_platform ASC
             LIMIT 6
         """
 
@@ -210,20 +210,138 @@ def _fetch_format_breakdown(conn, user_id, latest_report_month, range_config, cu
 
     sql = f"""
         SELECT
-            COALESCE(NULLIF(royalty_type, ''), 'Other') AS royalty_type,
+            COALESCE(NULLIF(source_platform, ''), 'Other') AS source_platform,
             COALESCE(SUM(earnings_in_base_currency), 0) AS earnings
         FROM royalty_transactions
         WHERE user_id = %s
           AND report_month >= DATE_TRUNC('month', %s::date) - INTERVAL '{range_config.months - 1} months'
           AND report_month < DATE_TRUNC('month', %s::date) + INTERVAL '1 month'
         GROUP BY 1
-        ORDER BY earnings DESC, royalty_type ASC
+        ORDER BY earnings DESC, source_platform ASC
         LIMIT 6
     """
 
     with conn.cursor(cursor_factory=RealDictCursor) as cursor:
         cursor.execute(sql, (user_id, latest_report_month, latest_report_month))
         return cursor.fetchall() or []
+
+
+def _fetch_top_books(conn, user_id, latest_report_month, range_config, custom_from=None, custom_to=None):
+    if custom_from and custom_to:
+        current_sql = """
+            SELECT
+                COALESCE(NULLIF(normalized_title, ''), 'Untitled') AS title,
+                COALESCE(NULLIF(author, ''), 'Unknown Author') AS author,
+                COALESCE(SUM(units_sold), 0) AS units_sold,
+                COALESCE(SUM(earnings_in_base_currency), 0) AS earnings
+            FROM royalty_transactions
+            WHERE user_id = %s
+              AND report_month >= %s
+              AND report_month <= %s
+            GROUP BY 1, 2
+            ORDER BY earnings DESC, units_sold DESC, title ASC
+            LIMIT 5
+        """
+        previous_days = max((custom_to - custom_from).days, 1)
+        previous_to = custom_from - timedelta(days=1)
+        previous_from = previous_to - timedelta(days=previous_days - 1)
+        comparison_label = f"{previous_from.isoformat()} to {previous_to.isoformat()}"
+        params = (user_id, custom_from, custom_to)
+        previous_params = (user_id, previous_from, previous_to)
+    else:
+        current_sql = f"""
+            SELECT
+                COALESCE(NULLIF(normalized_title, ''), 'Untitled') AS title,
+                COALESCE(NULLIF(author, ''), 'Unknown Author') AS author,
+                COALESCE(SUM(units_sold), 0) AS units_sold,
+                COALESCE(SUM(earnings_in_base_currency), 0) AS earnings
+            FROM royalty_transactions
+            WHERE user_id = %s
+              AND report_month >= DATE_TRUNC('month', %s::date) - INTERVAL '{range_config.months - 1} months'
+              AND report_month < DATE_TRUNC('month', %s::date) + INTERVAL '1 month'
+            GROUP BY 1, 2
+            ORDER BY earnings DESC, units_sold DESC, title ASC
+            LIMIT 5
+        """
+        previous_sql = f"""
+            SELECT
+                COALESCE(NULLIF(normalized_title, ''), 'Untitled') AS title,
+                COALESCE(NULLIF(author, ''), 'Unknown Author') AS author,
+                COALESCE(SUM(units_sold), 0) AS units_sold,
+                COALESCE(SUM(earnings_in_base_currency), 0) AS earnings
+            FROM royalty_transactions
+            WHERE user_id = %s
+              AND report_month >= DATE_TRUNC('month', %s::date) - INTERVAL '{(range_config.months * 2) - 1} months'
+              AND report_month < DATE_TRUNC('month', %s::date) - INTERVAL '{range_config.months - 1} months'
+            GROUP BY 1, 2
+            ORDER BY earnings DESC, units_sold DESC, title ASC
+        """
+        comparison_label = "previous period"
+        params = (user_id, latest_report_month, latest_report_month)
+        previous_params = (user_id, latest_report_month, latest_report_month)
+
+    with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+        cursor.execute(current_sql, params)
+        current_rows = cursor.fetchall() or []
+
+        if custom_from and custom_to:
+            cursor.execute(
+                """
+                SELECT
+                    COALESCE(NULLIF(normalized_title, ''), 'Untitled') AS title,
+                    COALESCE(NULLIF(author, ''), 'Unknown Author') AS author,
+                    COALESCE(SUM(units_sold), 0) AS units_sold,
+                    COALESCE(SUM(earnings_in_base_currency), 0) AS earnings
+                FROM royalty_transactions
+                WHERE user_id = %s
+                  AND report_month >= %s
+                  AND report_month <= %s
+                GROUP BY 1, 2
+                """,
+                previous_params,
+            )
+            previous_rows = cursor.fetchall() or []
+        else:
+            cursor.execute(previous_sql, previous_params)
+            previous_rows = cursor.fetchall() or []
+
+    previous_lookup = {
+        (str(row.get("title") or "").strip().lower(), str(row.get("author") or "").strip().lower()): row
+        for row in previous_rows
+    }
+
+    top_books = []
+    for index, row in enumerate(current_rows[:5]):
+        title = str(row.get("title") or "Untitled")
+        author = str(row.get("author") or "Unknown Author")
+        current_earnings = float(row.get("earnings") or 0)
+        current_units = float(row.get("units_sold") or 0)
+        previous_row = previous_lookup.get((title.strip().lower(), author.strip().lower()), {})
+        previous_earnings = float(previous_row.get("earnings") or 0)
+        delta = current_earnings - previous_earnings
+        pct = 0.0 if previous_earnings == 0 else (delta / previous_earnings) * 100.0
+        direction = "neutral"
+        if delta > 0:
+            direction = "positive"
+        elif delta < 0:
+            direction = "negative"
+
+        top_books.append({
+            "rank": index + 1,
+            "title": title,
+            "author": author,
+            "units_sold": current_units,
+            "earnings": current_earnings,
+            "change": {
+                "value": delta,
+                "pct": pct,
+                "direction": direction,
+                "comparison_label": comparison_label,
+            },
+            "cover_class": f"book-cover-{(index % 5) + 1}",
+        })
+
+    return top_books
 
 
 def _to_number(value):
@@ -373,7 +491,15 @@ def get_dashboard_summary(conn, user_id, range_key=None, base_currency="USD", cu
         custom_from=custom_from if is_custom else None,
         custom_to=custom_to if is_custom else None,
     )
-    format_breakdown = _fetch_format_breakdown(
+    source_breakdown = _fetch_source_breakdown(
+        conn,
+        user_id,
+        latest_report_month,
+        range_config,
+        custom_from=custom_from if is_custom else None,
+        custom_to=custom_to if is_custom else None,
+    )
+    top_books = _fetch_top_books(
         conn,
         user_id,
         latest_report_month,
@@ -435,6 +561,7 @@ def get_dashboard_summary(conn, user_id, range_key=None, base_currency="USD", cu
         "charts": {
             "sales_by_country": country_sales,
             "royalties_over_time": time_series,
-            "royalties_by_format": format_breakdown,
+            "royalties_by_source": source_breakdown,
         },
+        "top_books": top_books,
     }
