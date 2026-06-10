@@ -1676,6 +1676,11 @@
       fill: #fff;
       stroke: #6d3df4;
       stroke-width: 4;
+      cursor: pointer;
+    }
+
+    .line-chart circle.is-active {
+      stroke-width: 5;
     }
 
     .chart-tooltip {

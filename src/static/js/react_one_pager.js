@@ -138,6 +138,7 @@
   let pendingUploadTarget = "home";
   let lastAnalyticsPlan = null;
   let dashboardSummary = null;
+  let activeRoyaltiesPointIndex = null;
 
   function isReportingRoute(){
     return window.location.pathname === "/reporting";
@@ -1257,6 +1258,8 @@
 
     const rows = Array.isArray(items) ? items : [];
     if(rows.length === 0){
+      activeRoyaltiesPointIndex = null;
+      royaltiesOverTimeChart.innerHTML = "";
       return;
     }
 
@@ -1270,6 +1273,13 @@
 
     const linePath = points.map((point, idx) => `${idx === 0 ? "M" : "L"}${point.x.toFixed(1)} ${point.y.toFixed(1)}`).join(" ");
     const areaPath = `${linePath} L${points[points.length - 1].x.toFixed(1)} 218 L28 218 Z`;
+    const defaultIndex = activeRoyaltiesPointIndex !== null && activeRoyaltiesPointIndex >= 0 && activeRoyaltiesPointIndex < rows.length
+      ? activeRoyaltiesPointIndex
+      : rows.length - 1;
+    const activePoint = points[defaultIndex] || points[points.length - 1];
+    const activeRow = rows[defaultIndex] || rows[rows.length - 1];
+    const tooltipLeft = Math.max(8.5, Math.min((activePoint.x / 620) * 100, 91.5));
+    const tooltipTop = Math.max(6, ((activePoint.y - 78) / 260) * 100);
     const labels = rows.map((item, idx) => {
       if(rows.length <= 5) return `<span>${escapeHtml(formatDashboardPeriodLabel(item.period))}</span>`;
       if(idx % Math.ceil(rows.length / 5) !== 0 && idx !== rows.length - 1) return "";
@@ -1277,7 +1287,9 @@
     }).filter(Boolean).join("");
 
     royaltiesOverTimeChart.innerHTML = `
-      <div class="chart-tooltip">${escapeHtml(formatDashboardPeriodLabel(rows[rows.length - 1].period))}<br><strong>${formatDashboardCurrency(rows[rows.length - 1].earnings)}</strong></div>
+      <div class="chart-tooltip" style="left:${tooltipLeft.toFixed(1)}%; top:${tooltipTop.toFixed(1)}%;">
+        ${escapeHtml(formatDashboardPeriodLabel(activeRow.period))}<br><strong>${formatDashboardCurrency(activeRow.earnings)}</strong>
+      </div>
       <svg viewBox="0 0 620 260" role="img" aria-label="Royalties over time chart">
         <defs>
           <linearGradient id="royaltyArea" x1="0" y1="0" x2="0" y2="1">
@@ -1293,10 +1305,23 @@
         </g>
         <path class="area" d="${areaPath}"/>
         <path class="line" d="${linePath}"/>
-        ${points.map(point => `<circle cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="6"></circle>`).join("")}
+        ${points.map((point, idx) => `<circle data-royalty-point="${idx}" cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="6" class="${idx === defaultIndex ? "is-active" : ""}"></circle>`).join("")}
       </svg>
       <div class="chart-axis">${labels}</div>
     `;
+  }
+
+  if(royaltiesOverTimeChart){
+    royaltiesOverTimeChart.addEventListener("click", (event) => {
+      const circle = event.target && event.target.closest ? event.target.closest("circle[data-royalty-point]") : null;
+      if(!circle) return;
+      const index = Number(circle.getAttribute("data-royalty-point"));
+      if(Number.isNaN(index)) return;
+      activeRoyaltiesPointIndex = index;
+      if(dashboardSummary && dashboardSummary.charts){
+        renderDashboardTimeSeries(dashboardSummary.charts.royalties_over_time || []);
+      }
+    });
   }
 
   function formatDashboardPeriodLabel(value){
